@@ -122,3 +122,9 @@ export interface ParsedDeepLink {
   params?: DeepLinkParams;
   error?: string;
 }
+
+/** Clipboard text captured by ctrl+v, waiting to be saved as a note. */
+export interface IncomingNote {
+  id: number;
+  text: string;
+}

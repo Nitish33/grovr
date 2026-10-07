@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -19,6 +19,7 @@ import { Check, Copy, GripVertical, Pin, PinOff, Trash2 } from 'lucide-react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useNotes } from '@/hooks/useNotes';
 import type { Note } from '@/lib/api';
+import type { IncomingNote } from '@/types';
 
 /** Rough characters per line in the edit box, used to size it to the note. */
 const CHARS_PER_ROW = 90;
@@ -74,10 +75,11 @@ function NoteRow({ note, copied, onCopy, onSave, onDelete, onTogglePin }: NoteRo
         <textarea
           className="note-edit-input"
           value={draft}
-          rows={Math.min(MAX_EDIT_ROWS, Math.ceil(draft.length / CHARS_PER_ROW) || 1)}
-          onChange={(e) => setDraft(e.target.value.replace(/\n/g, ' '))}
+          rows={Math.min(MAX_EDIT_ROWS, Math.max(draft.split('\n').length, Math.ceil(draft.length / CHARS_PER_ROW)))}
+          onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            // Enter saves; Shift+Enter adds a line break
+            if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               finish(true);
             }
@@ -113,10 +115,29 @@ function NoteRow({ note, copied, onCopy, onSave, onDelete, onTogglePin }: NoteRo
   );
 }
 
-export function NotesTab() {
+interface NotesTabProps {
+  /** Clipboard text captured by ctrl+v, to be saved as a new note once. */
+  incomingNote?: IncomingNote | null;
+  onIncomingNoteHandled?: () => void;
+}
+
+export function NotesTab({ incomingNote = null, onIncomingNoteHandled }: NotesTabProps) {
   const { notes, loaded, addNote, updateNote, removeNote, togglePin, reorder } = useNotes();
   const { copiedKey, copy } = useCopyToClipboard();
   const [draft, setDraft] = useState('');
+  const handledIncoming = useRef<number | null>(null);
+
+  // Save a captured clipboard note, but only after the saved notes have loaded
+  // (adding earlier would overwrite them), and only once per capture.
+  useEffect(() => {
+    if (!incomingNote || !loaded || handledIncoming.current === incomingNote.id) return;
+    handledIncoming.current = incomingNote.id;
+    addNote(incomingNote.text);
+    onIncomingNoteHandled?.();
+    // The tab autofocuses its input, which would turn the next cmd+v into a plain paste
+    // there. Release focus so repeated cmd+v keeps capturing notes.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  }, [incomingNote, loaded, addNote, onIncomingNoteHandled]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),

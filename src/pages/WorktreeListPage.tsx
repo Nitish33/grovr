@@ -66,6 +66,7 @@ import { getIDEInfo } from '@/lib/ide-config';
 import * as api from '@/lib/api';
 import { UpdateBadge } from '@/components/ui/update-badge';
 import type { UpdateInfo } from '@/lib/updater';
+import type { IncomingNote } from '@/types';
 import type { Project, Worktree, IDEPreset } from '@/types';
 import type { PullRequestInfo, JiraIssueInfo } from '@/lib/api';
 
@@ -90,6 +91,9 @@ interface WorktreeListPageProps {
   onExpandedProjectsChange: (expanded: Set<string>) => void;
   updateInfo: UpdateInfo | null;
   onShowUpdate: () => void;
+  /** Clipboard text captured by ctrl+v; shown in the Notes tab as a new note. */
+  incomingNote?: IncomingNote | null;
+  onIncomingNoteHandled?: () => void;
 }
 
 // Extended worktree with PR and Jira info
@@ -113,6 +117,8 @@ export function WorktreeListPage({
   onExpandedProjectsChange,
   updateInfo,
   onShowUpdate,
+  incomingNote = null,
+  onIncomingNoteHandled,
 }: WorktreeListPageProps) {
   const [projects, setProjects] = useState<ProjectWithIntegrations[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +126,12 @@ export function WorktreeListPage({
   const [hasGitHub, setHasGitHub] = useState(false);
   const [hasJira, setHasJira] = useState(false);
   const [jiraHost, setJiraHost] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<MainTab>('worktree');
+  const [activeTab, setActiveTab] = useState<MainTab>(incomingNote ? 'notes' : 'worktree');
+
+  // A captured clipboard note brings us to the Notes tab, even when already on this page
+  useEffect(() => {
+    if (incomingNote) setActiveTab('notes');
+  }, [incomingNote]);
 
   // IDE confirmation modal state
   const [ideModalOpen, setIdeModalOpen] = useState(false);
@@ -705,7 +716,7 @@ export function WorktreeListPage({
           aria-labelledby="main-tab-notes"
           className="flex-1 min-h-0 flex flex-col"
         >
-          <NotesTab />
+          <NotesTab incomingNote={incomingNote} onIncomingNoteHandled={onIncomingNoteHandled} />
         </div>
       )}
 

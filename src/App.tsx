@@ -10,9 +10,16 @@ import { onOpenUrl, getCurrent } from '@tauri-apps/plugin-deep-link';
 import * as api from '@/lib/api';
 import { parseDeepLink, findBestMatchingProject } from '@/lib/deep-link';
 import { checkForUpdates, type UpdateInfo } from '@/lib/updater';
-import type { Project, Worktree, IDEPreset, DeepLinkParams } from '@/types';
+import type { Project, Worktree, IDEPreset, DeepLinkParams, IncomingNote } from '@/types';
 import { applyTheme, type ThemeMode } from '@/lib/theme';
 import './index.css';
+
+const IS_MAC = /Mac/i.test(navigator.platform);
+
+function isEditableElement(el: Element | null): boolean {
+  if (!el) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
+}
 
 type Page = 'worktrees' | 'settings' | 'project-settings' | 'add-project' | 'create-worktree' | 'edit-worktree';
 
@@ -29,6 +36,7 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [theme, setTheme] = useState<ThemeMode>('system');
   const [clipboardData, setClipboardData] = useState<ParsedClipboard | null>(null);
+  const [incomingNote, setIncomingNote] = useState<IncomingNote | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
@@ -75,6 +83,24 @@ function App() {
 
   // Global keyboard shortcuts
   useEffect(() => {
+    /** Matches the clipboard against the configured worktree patterns, e.g. "[ABC-123] description". */
+    const parseWorktreeClipboard = (text: string): ParsedClipboard | null => {
+      for (const pattern of clipboardPatternsRef.current) {
+        try {
+          const match = text.match(new RegExp(pattern));
+          if (match?.groups) {
+            return {
+              issueNumber: match.groups.issueNumber || '',
+              description: match.groups.description || '',
+            };
+          }
+        } catch {
+          // Invalid regex, skip
+        }
+      }
+      return null;
+    };
+
     const handleKeyDown = async (e: KeyboardEvent) => {
       // cmd+, : Open settings
       if (e.metaKey && e.key === ',') {
@@ -83,43 +109,25 @@ function App() {
         return;
       }
 
-      // cmd+v : Parse clipboard and open create worktree page
-      if (e.metaKey && e.key === 'v') {
-        // Don't intercept if focus is on input/textarea
-        const activeEl = document.activeElement;
-        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-          return;
-        }
+      const isPlainPasteKey = e.key.toLowerCase() === 'v' && !e.altKey && !e.shiftKey;
+      if (!isPlainPasteKey || (e.ctrlKey === e.metaKey)) return; // exactly one of ctrl / cmd
 
-        try {
-          const text = await api.readClipboardText();
-          if (!text || clipboardPatternsRef.current.length === 0) return;
+      // Never hijack pasting into a text field, or while a dialog is open.
+      // (On macOS ctrl+v is not a paste shortcut, so it may capture even from a field.)
+      const typing = isEditableElement(document.activeElement);
+      if ((typing && !(e.ctrlKey && IS_MAC)) || document.querySelector('[role="dialog"]')) return;
 
-          // Try each pattern until one matches
-          let matchedData: ParsedClipboard | null = null;
-          for (const pattern of clipboardPatternsRef.current) {
-            try {
-              const regex = new RegExp(pattern);
-              const match = text.match(regex);
-              if (match?.groups) {
-                matchedData = {
-                  issueNumber: match.groups.issueNumber || '',
-                  description: match.groups.description || '',
-                };
-                break;
-              }
-            } catch {
-              // Invalid regex, skip
-            }
-          }
+      e.preventDefault();
+      try {
+        const raw = await api.readClipboardText();
+        const text = raw.trim();
+        if (!text) return;
 
-          if (matchedData) {
-            e.preventDefault();
-
-            // Load projects and select the first one
-            const projects = await api.getProjects();
-            if (projects.length === 0) return;
-
+        // cmd+v: text that looks like "[ABC-123] description" still opens Create Worktree
+        const matchedData = e.metaKey ? parseWorktreeClipboard(raw) : null;
+        if (matchedData) {
+          const projects = await api.getProjects();
+          if (projects.length > 0) {
             const firstProject = projects[0];
             setSelectedProject({
               name: firstProject.name,
@@ -130,10 +138,15 @@ function App() {
             });
             setClipboardData(matchedData);
             setPage('create-worktree');
+            return;
           }
-        } catch {
-          // Clipboard access denied or parse failed - ignore
         }
+
+        // Anything else (cmd+v or ctrl+v): save it as a note and open the Notes tab
+        setIncomingNote({ id: Date.now(), text });
+        setPage('worktrees');
+      } catch {
+        // Clipboard unavailable or not text - ignore
       }
     };
 
@@ -299,6 +312,8 @@ function App() {
           onExpandedProjectsChange={setExpandedProjects}
           updateInfo={updateInfo}
           onShowUpdate={() => setShowUpdateDialog(true)}
+          incomingNote={incomingNote}
+          onIncomingNoteHandled={() => setIncomingNote(null)}
         />
       )}
       {page === 'settings' && (

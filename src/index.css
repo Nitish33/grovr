@@ -201,7 +201,7 @@ html, body, #root {
   @apply flex-1 min-w-0 px-2 py-1.5 text-left rounded-md cursor-text;
 }
 .note-text-content {
-  @apply block;
+  @apply block whitespace-pre-wrap; /* keep line breaks from captured clipboard text */
   overflow-wrap: anywhere; /* wrap long tokens and URLs that have no spaces */
 }
 .note-text:focus-visible { @apply outline-none ring-2 ring-ring; }
