@@ -22,6 +22,21 @@ export interface BackendWorktreeStatus {
   untracked: number;
 }
 
+/** Sync and change state of a worktree (`git status` summary) */
+export interface GitStatusSummary {
+  ahead: number;
+  behind: number;
+  has_upstream: boolean;
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  conflicted: number;
+}
+
+export async function getWorktreeGitStatus(worktreePath: string): Promise<GitStatusSummary> {
+  return invoke('get_worktree_git_status', { worktreePath });
+}
+
 export interface BackendIdeConfig {
   type: string;
   preset?: string;

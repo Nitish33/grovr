@@ -30,7 +30,7 @@ use commands::git::{
     prune_worktrees, get_worktree_status, get_branches, get_current_branch, get_default_branch,
     delete_branch, rename_branch, git_fetch, git_pull, get_github_remote_info, open_ide,
     open_in_finder, open_terminal, copy_paths_to_worktree, detect_native_projects,
-    open_xcode, open_android_studio, run_start_command,
+    open_xcode, open_android_studio, run_start_command, get_worktree_git_status,
 };
 use commands::clipboard::read_clipboard_text;
 use commands::integrations::{
@@ -185,6 +185,7 @@ pub fn run() {
             // Windows
             open_json_viewer,
             open_log_window,
+            get_worktree_git_status,
             start_log_stream,
             save_log_snapshot,
             list_android_processes,

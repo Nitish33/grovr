@@ -68,7 +68,8 @@ import { UpdateBadge } from '@/components/ui/update-badge';
 import type { UpdateInfo } from '@/lib/updater';
 import type { IncomingNote } from '@/types';
 import type { Project, Worktree, IDEPreset } from '@/types';
-import type { PullRequestInfo, JiraIssueInfo } from '@/lib/api';
+import type { PullRequestInfo, JiraIssueInfo, GitStatusSummary } from '@/lib/api';
+import { WorktreeGitStatus } from '@/components/WorktreeGitStatus';
 
 type MainTab = 'worktree' | 'tools' | 'simulator' | 'emulator' | 'notes' | 'links';
 
@@ -100,6 +101,7 @@ interface WorktreeListPageProps {
 interface WorktreeWithIntegrations extends Worktree {
   prInfo?: PullRequestInfo;
   jiraInfo?: JiraIssueInfo;
+  gitStatus?: GitStatusSummary;
 }
 
 interface ProjectWithIntegrations extends Omit<Project, 'worktrees'> {
@@ -487,6 +489,16 @@ export function WorktreeListPage({
 
       // UI is now ready - stop loading indicator
       setLoading(false);
+
+      // Git status is read once per load (initial load and the Refresh button), not polled
+      for (const project of projectsWithWorktrees) {
+        for (const worktree of project.worktrees) {
+          api
+            .getWorktreeGitStatus(worktree.path)
+            .then((gitStatus) => updateWorktree(project.repoPath, worktree.path, { gitStatus }))
+            .catch(() => undefined);
+        }
+      }
 
       // Load integration data in background (non-blocking)
       loadIntegrationData(projectsWithWorktrees, githubConfig, jiraConfig);
@@ -1068,7 +1080,8 @@ function ProjectCard({
           className="worktree-table"
           style={{
             gridTemplateColumns: [
-              'auto',
+              // Branch column grows with its content but may shrink (long paths truncate)
+              'minmax(0, auto)',
               showDescription ? 'minmax(0, 1fr)' : null,
               showGitHub ? '80px' : null,
               showJira ? '80px' : null,
@@ -1291,6 +1304,8 @@ function WorktreeRow({
 
       {/* Actions */}
       <div className="worktree-col-actions">
+        {/* Shown while the row isn't hovered; the actions below replace it on hover */}
+        <WorktreeGitStatus status={worktree.gitStatus} />
         <button
           className={`worktree-action worktree-quick-action ${native.start_command ? '' : 'worktree-quick-action-disabled'}`}
           title={native.start_command ? `Run ${native.start_command} in Terminal` : 'Add start in your package.json to run'}

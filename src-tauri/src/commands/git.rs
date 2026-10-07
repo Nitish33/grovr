@@ -265,6 +265,71 @@ pub fn get_worktree_status(worktree_path: String) -> Result<WorktreeStatus, Stri
     })
 }
 
+/// Changes and sync state of a worktree, for the at-a-glance badges on the worktree list.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct GitStatusSummary {
+    /// Commits not yet pushed to the upstream branch
+    pub ahead: i32,
+    /// Upstream commits not yet pulled
+    pub behind: i32,
+    /// False when the branch has no upstream (or HEAD is detached), so ahead/behind are unknown
+    pub has_upstream: bool,
+    pub staged: i32,
+    pub unstaged: i32,
+    pub untracked: i32,
+    pub conflicted: i32,
+}
+
+#[tauri::command]
+pub async fn get_worktree_git_status(worktree_path: String) -> Result<GitStatusSummary, String> {
+    tokio::task::spawn_blocking(move || {
+        // --no-optional-locks: don't take the index lock, so this never makes the
+        // user's own git commands fail with "index.lock exists"
+        let output = Command::new("git")
+            .args(["--no-optional-locks", "status", "--porcelain=v2", "--branch"])
+            .current_dir(&worktree_path)
+            .output()
+            .map_err(|e| format!("Failed to run git: {}", e))?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        let mut summary = GitStatusSummary::default();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            if let Some(rest) = line.strip_prefix("# branch.ab ") {
+                // "+<ahead> -<behind>"
+                let mut parts = rest.split_whitespace();
+                let ahead = parts.next().and_then(|p| p.strip_prefix('+')).and_then(|p| p.parse().ok());
+                let behind = parts.next().and_then(|p| p.strip_prefix('-')).and_then(|p| p.parse().ok());
+                if let (Some(ahead), Some(behind)) = (ahead, behind) {
+                    summary.ahead = ahead;
+                    summary.behind = behind;
+                    summary.has_upstream = true;
+                }
+            } else if line.starts_with("1 ") || line.starts_with("2 ") {
+                // "<type> <XY> ...": X is the index (staged) state, Y the working tree state
+                let mut xy = line[2..].chars();
+                let (x, y) = (xy.next().unwrap_or('.'), xy.next().unwrap_or('.'));
+                if x != '.' {
+                    summary.staged += 1;
+                }
+                if y != '.' {
+                    summary.unstaged += 1;
+                }
+            } else if line.starts_with("u ") {
+                summary.conflicted += 1;
+            } else if line.starts_with("? ") {
+                summary.untracked += 1;
+            }
+        }
+
+        Ok(summary)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
 // ============ Branch Commands ============
 
 #[tauri::command]
