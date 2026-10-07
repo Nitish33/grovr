@@ -51,6 +51,36 @@ export interface BackendAppSettings {
   github_configs: unknown[];
   jira_configs: unknown[];
   global_shortcut?: string;
+  pinned_devices?: string[];
+}
+
+// ============ Devices API ============
+
+export interface Device {
+  id: string;
+  name: string;
+  runtime: string | null;
+  state: string | null;
+}
+
+export async function listIosSimulators(): Promise<Device[]> {
+  return invoke('list_ios_simulators');
+}
+
+export async function listAndroidEmulators(): Promise<Device[]> {
+  return invoke('list_android_emulators');
+}
+
+export async function launchIosSimulator(udid: string): Promise<void> {
+  return invoke('launch_ios_simulator', { udid });
+}
+
+export async function launchAndroidEmulator(avdName: string): Promise<void> {
+  return invoke('launch_android_emulator', { avdName });
+}
+
+export async function setPinnedDevices(pinned: string[]): Promise<void> {
+  return invoke('set_pinned_devices', { pinned });
 }
 
 // ============ Clipboard API ============

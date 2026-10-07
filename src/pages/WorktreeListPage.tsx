@@ -28,8 +28,6 @@ import {
   RefreshCw,
   Folder,
   Terminal,
-  Hammer,
-  Bot,
   GitBranchPlus,
   Pencil,
   ExternalLink,
@@ -56,6 +54,9 @@ import {
 } from '@/components/ui/modal';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { AlertModal } from '@/components/ui/alert-modal';
+import xcodeIcon from '@/assets/ide-icons/xcode.svg';
+import androidStudioIcon from '@/assets/ide-icons/android-studio.svg';
+import { DevicesTab } from '@/components/DevicesTab';
 import { useNativeProjects } from '@/hooks/useNativeProjects';
 import { getIDEInfo } from '@/lib/ide-config';
 import * as api from '@/lib/api';
@@ -63,6 +64,15 @@ import { UpdateBadge } from '@/components/ui/update-badge';
 import type { UpdateInfo } from '@/lib/updater';
 import type { Project, Worktree, IDEPreset } from '@/types';
 import type { PullRequestInfo, JiraIssueInfo } from '@/lib/api';
+
+type MainTab = 'worktree' | 'tools' | 'simulator' | 'emulator';
+
+const MAIN_TABS: { id: MainTab; label: string }[] = [
+  { id: 'worktree', label: 'Worktree' },
+  { id: 'tools', label: 'Tools' },
+  { id: 'simulator', label: 'Simulator' },
+  { id: 'emulator', label: 'Emulator' },
+];
 
 interface WorktreeListPageProps {
   onOpenSettings: () => void;
@@ -104,6 +114,7 @@ export function WorktreeListPage({
   const [hasGitHub, setHasGitHub] = useState(false);
   const [hasJira, setHasJira] = useState(false);
   const [jiraHost, setJiraHost] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<MainTab>('worktree');
 
   // IDE confirmation modal state
   const [ideModalOpen, setIdeModalOpen] = useState(false);
@@ -199,6 +210,9 @@ export function WorktreeListPage({
 
   // Keyboard navigation handler
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Worktree shortcuts only apply on the Worktree tab
+    if (activeTab !== 'worktree') return;
+
     // Ignore if modal is open
     if (ideModalOpen || deleteModalOpen || forceDeleteModalOpen || errorModalOpen) return;
 
@@ -272,7 +286,7 @@ export function WorktreeListPage({
       setSearchQuery((prev) => prev + key);
       setTimeout(() => searchInputRef.current?.focus(), 0);
     }
-  }, [visibleWorktrees, selectedPath, searchQuery, searchActive, ideModalOpen, deleteModalOpen, forceDeleteModalOpen, errorModalOpen]);
+  }, [activeTab, visibleWorktrees, selectedPath, searchQuery, searchActive, ideModalOpen, deleteModalOpen, forceDeleteModalOpen, errorModalOpen]);
 
   // Attach keyboard listener
   useEffect(() => {
@@ -638,8 +652,57 @@ export function WorktreeListPage({
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="main-tabs" role="tablist" aria-label="Main sections">
+        {MAIN_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            id={`main-tab-${tab.id}`}
+            role="tab"
+            type="button"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`main-tabpanel-${tab.id}`}
+            className={`main-tab ${activeTab === tab.id ? 'main-tab-active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'tools' && (
+        <div
+          id="main-tabpanel-tools"
+          role="tabpanel"
+          aria-labelledby="main-tab-tools"
+          className="flex-1"
+        />
+      )}
+
+      {activeTab === 'simulator' && (
+        <div
+          id="main-tabpanel-simulator"
+          role="tabpanel"
+          aria-labelledby="main-tab-simulator"
+          className="flex-1 min-h-0 flex flex-col"
+        >
+          <DevicesTab platform="ios" />
+        </div>
+      )}
+
+      {activeTab === 'emulator' && (
+        <div
+          id="main-tabpanel-emulator"
+          role="tabpanel"
+          aria-labelledby="main-tab-emulator"
+          className="flex-1 min-h-0 flex flex-col"
+        >
+          <DevicesTab platform="android" />
+        </div>
+      )}
+
       {/* Search Bar */}
-      {searchActive && (
+      {activeTab === 'worktree' && searchActive && (
         <div className="search-bar">
           <Search size={12} className="search-bar-icon" />
           <input
@@ -665,7 +728,14 @@ export function WorktreeListPage({
       )}
 
       {/* Content */}
-      <ScrollArea className="flex-1" ref={scrollAreaRef}>
+      {activeTab === 'worktree' && (
+      <ScrollArea
+        className="flex-1"
+        ref={scrollAreaRef}
+        id="main-tabpanel-worktree"
+        role="tabpanel"
+        aria-labelledby="main-tab-worktree"
+      >
         <div className="pl-2 pr-3 pt-1 pb-2 space-y-0">
           {projects.length === 0 && !loading && (
             <div className="empty-state">
@@ -714,6 +784,7 @@ export function WorktreeListPage({
           </DndContext>
         </div>
       </ScrollArea>
+      )}
 
       {/* IDE Confirmation Modal */}
       <Modal open={ideModalOpen} onOpenChange={setIdeModalOpen}>
@@ -1185,7 +1256,7 @@ function WorktreeRow({
               void openNative(() => api.openXcode(project), 'Xcode');
             }}
           >
-            <Hammer size={14} />
+            <img src={xcodeIcon} alt="" className="worktree-tool-icon" />
           </button>
         )}
         {native.android_dir && (
@@ -1199,7 +1270,7 @@ function WorktreeRow({
               void openNative(() => api.openAndroidStudio(dir), 'Android Studio');
             }}
           >
-            <Bot size={14} />
+            <img src={androidStudioIcon} alt="" className="worktree-tool-icon" />
           </button>
         )}
         <button

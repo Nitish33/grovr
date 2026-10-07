@@ -118,6 +118,9 @@ pub struct AppSettings {
     pub worktree_memos: HashMap<String, WorktreeMemo>,
     #[serde(default)]
     pub global_shortcut: Option<String>,
+    /// Pinned simulators/emulators, namespaced as "ios:<udid>" or "android:<avd>"
+    #[serde(default)]
+    pub pinned_devices: Vec<String>,
 }
 
 fn default_theme() -> String {

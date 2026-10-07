@@ -100,6 +100,64 @@ html, body, #root {
   color: hsl(var(--foreground));
 }
 
+/* Main tabs */
+.main-tabs {
+  @apply flex items-center gap-1 px-3 pb-1 flex-shrink-0;
+}
+.main-tab {
+  @apply px-2.5 py-1 rounded-md text-xs font-medium transition-colors;
+  color: hsl(var(--muted-foreground));
+}
+.main-tab:hover {
+  background: hsl(var(--secondary) / 0.6);
+  color: hsl(var(--foreground));
+}
+.main-tab-active,
+.main-tab-active:hover {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+.main-tab:focus-visible {
+  @apply outline-none ring-2 ring-ring;
+}
+
+/* Devices (simulators / emulators) */
+.devices-toolbar {
+  @apply flex items-center justify-between px-3 pb-1 flex-shrink-0;
+}
+.devices-count {
+  @apply text-xs;
+  color: hsl(var(--muted-foreground));
+}
+.devices-section-label {
+  @apply px-3 pt-2 pb-1 text-xs font-medium;
+  color: hsl(var(--muted-foreground) / 0.65);
+}
+.devices-message {
+  @apply px-3 py-4 text-xs text-center;
+  color: hsl(var(--muted-foreground));
+}
+.device-row {
+  @apply flex items-center gap-2 pr-3 rounded-md text-xs transition-colors;
+}
+.device-row-main {
+  @apply flex flex-1 min-w-0 items-center gap-2 pl-3 py-1.5 text-left rounded-md cursor-pointer disabled:cursor-default;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+}
+.device-row:hover { background: hsl(var(--accent) / 0.5); }
+.device-row-icon { color: hsl(var(--muted-foreground)); @apply flex-shrink-0; }
+.device-row-name { @apply truncate; }
+.device-row-meta { @apply flex-shrink-0; color: hsl(var(--muted-foreground)); }
+.device-row-badge {
+  @apply px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0;
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+.device-pin { @apply flex-shrink-0 opacity-0; }
+.device-row:hover .device-pin,
+.device-pin:focus-visible,
+.device-pin-active { @apply opacity-100; }
+
 /* Search Bar */
 .search-bar {
   @apply flex items-center gap-2 px-3 py-1.5 mx-2 mb-1 rounded-md text-xs flex-shrink-0;
@@ -356,6 +414,7 @@ html, body, #root {
 }
 
 .worktree-quick-action { @apply opacity-0; }
+.worktree-tool-icon { @apply w-4 h-4; }
 .worktree-row:hover .worktree-quick-action,
 .worktree-quick-action:focus-visible { @apply opacity-100; }
 

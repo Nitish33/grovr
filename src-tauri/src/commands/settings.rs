@@ -185,6 +185,17 @@ pub fn set_onboarding_completed(
 }
 
 #[tauri::command]
+pub fn set_pinned_devices(
+    app: tauri::AppHandle,
+    state: State<SettingsState>,
+    pinned: Vec<String>,
+) -> Result<(), String> {
+    let mut settings = state.0.lock().map_err(|e| e.to_string())?;
+    settings.pinned_devices = pinned;
+    save_settings(&app, &settings)
+}
+
+#[tauri::command]
 pub fn get_worktree_memo(
     state: State<SettingsState>,
     path: String,

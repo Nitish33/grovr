@@ -15,7 +15,10 @@ use commands::settings::{
     set_clipboard_parse_patterns, set_copy_paths, set_default_worktree_template,
     set_fetch_before_create, set_global_shortcut, set_ide, set_last_used_project,
     set_launch_at_startup, set_onboarding_completed, set_refresh_interval_minutes,
-    set_skip_open_ide_confirm, set_theme, set_worktree_memo,
+    set_skip_open_ide_confirm, set_theme, set_worktree_memo, set_pinned_devices,
+};
+use commands::devices::{
+    list_ios_simulators, list_android_emulators, launch_ios_simulator, launch_android_emulator,
 };
 use commands::projects::{add_project, get_projects, remove_project, reorder_projects, update_project};
 use commands::git::{
@@ -118,6 +121,7 @@ pub fn run() {
             get_worktree_memo,
             set_worktree_memo,
             set_global_shortcut,
+            set_pinned_devices,
             // Projects
             get_projects,
             add_project,
@@ -162,6 +166,11 @@ pub fn run() {
             remove_jira_config,
             validate_jira_credentials,
             fetch_jira_issue,
+            // Devices
+            list_ios_simulators,
+            list_android_emulators,
+            launch_ios_simulator,
+            launch_android_emulator,
             // Clipboard
             read_clipboard_text,
         ])
