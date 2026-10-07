@@ -1230,8 +1230,13 @@ function WorktreeRow({
       {/* Branch */}
       <div className="worktree-col-branch">
         <GitBranch size={14} className="worktree-branch-icon" />
-        <span className="worktree-branch-name">{worktree.branch}</span>
-        {worktree.isMain && <span className="worktree-main-badge">main</span>}
+        <div className="worktree-branch-text">
+          <div className="worktree-branch-line">
+            <span className="worktree-branch-name">{worktree.branch}</span>
+            {worktree.isMain && <span className="worktree-main-badge">main</span>}
+          </div>
+          <span className="worktree-path" title={worktree.path}>{worktree.path}</span>
+        </div>
       </div>
 
       {/* Description - only show if any worktree has description */}

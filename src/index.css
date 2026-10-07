@@ -527,6 +527,9 @@ html, body, #root {
 
 .worktree-branch-icon { @apply text-muted-foreground flex-shrink-0; }
 .worktree-branch-name { @apply font-mono text-xs truncate; }
+.worktree-branch-text { @apply flex flex-col min-w-0 gap-0.5; }
+.worktree-branch-line { @apply flex items-center gap-1.5 min-w-0; }
+.worktree-path { @apply font-mono text-[8px] truncate text-muted-foreground; }
 .worktree-main-badge {
   @apply px-1 py-0.5 text-[9px] font-medium rounded flex-shrink-0;
   background: hsl(142 76% 36% / 0.15);
