@@ -29,13 +29,14 @@ export function DevicesTab({ platform }: DevicesTabProps) {
 
   const renderRow = (device: Device, isPinned: boolean) => {
     const launching = launchingId === device.id;
+    const running = device.state === 'Booted';
     return (
       <div key={device.id} className="device-row">
         <button
           className="device-row-main"
-          title={`Open ${device.name}`}
-          aria-label={`Open ${device.name}`}
-          disabled={launchingId !== null}
+          title={running ? `${device.name} is running` : `Open ${device.name}`}
+          aria-label={running ? `${device.name} (running)` : `Open ${device.name}`}
+          disabled={launchingId !== null || running}
           onClick={() => void launch(device.id)}
         >
           <Smartphone size={14} className="device-row-icon" />
@@ -44,7 +45,7 @@ export function DevicesTab({ platform }: DevicesTabProps) {
           {launching ? (
             <span className="device-row-badge">Starting…</span>
           ) : (
-            device.state === 'Booted' && <span className="device-row-badge">Running</span>
+            running && <span className="device-row-badge">Running</span>
           )}
         </button>
         <button

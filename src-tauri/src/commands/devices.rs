@@ -10,7 +10,7 @@ pub struct Device {
     pub name: String,
     /// e.g. "iOS 26.3". None for Android.
     pub runtime: Option<String>,
-    /// e.g. "Booted" / "Shutdown". None when unknown (Android).
+    /// "Booted" or "Shutdown"
     pub state: Option<String>,
 }
 
@@ -74,33 +74,37 @@ fn parse_simulators(json: &Value) -> Vec<Device> {
     result
 }
 
+fn ios_simulators_blocking() -> Result<Vec<Device>, String> {
+    let output = Command::new("xcrun")
+        .args(["simctl", "list", "devices", "available", "--json"])
+        .output()
+        .map_err(|e| format!("Failed to run xcrun (is Xcode installed?): {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    let json: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Failed to parse simctl output: {}", e))?;
+    Ok(parse_simulators(&json))
+}
+
 #[tauri::command]
 pub async fn list_ios_simulators() -> Result<Vec<Device>, String> {
     if !cfg!(target_os = "macos") {
         return Ok(Vec::new());
     }
 
-    tokio::task::spawn_blocking(|| {
-        let output = Command::new("xcrun")
-            .args(["simctl", "list", "devices", "available", "--json"])
-            .output()
-            .map_err(|e| format!("Failed to run xcrun (is Xcode installed?): {}", e))?;
-
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-        }
-
-        let json: Value = serde_json::from_slice(&output.stdout)
-            .map_err(|e| format!("Failed to parse simctl output: {}", e))?;
-        Ok(parse_simulators(&json))
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
+    tokio::task::spawn_blocking(ios_simulators_blocking)
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 /// GUI apps don't inherit the shell PATH, so look in the usual SDK locations first.
-fn find_emulator_binary() -> Option<PathBuf> {
-    let bin = if cfg!(target_os = "windows") { "emulator.exe" } else { "emulator" };
+/// `dir`/`name` is the tool's path relative to the SDK root, e.g. ("emulator", "emulator")
+/// or ("platform-tools", "adb").
+fn find_sdk_tool(dir: &str, name: &str) -> Option<PathBuf> {
+    let bin = if cfg!(target_os = "windows") { format!("{}.exe", name) } else { name.to_string() };
     let mut sdk_roots: Vec<PathBuf> = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
         .iter()
         .filter_map(|var| std::env::var_os(var).map(PathBuf::from))
@@ -116,8 +120,45 @@ fn find_emulator_binary() -> Option<PathBuf> {
 
     sdk_roots
         .into_iter()
-        .map(|root| root.join("emulator").join(bin))
+        .map(|root| root.join(dir).join(&bin))
         .find(|path| path.is_file())
+}
+
+fn find_emulator_binary() -> Option<PathBuf> {
+    find_sdk_tool("emulator", "emulator")
+}
+
+/// Names of AVDs that are currently running, via `adb`. Best effort: any failure
+/// (adb missing, daemon not ready) just means "none detected".
+fn running_avd_names() -> Vec<String> {
+    let adb = find_sdk_tool("platform-tools", "adb").unwrap_or_else(|| PathBuf::from("adb"));
+
+    let Ok(output) = Command::new(&adb).arg("devices").output() else {
+        return Vec::new();
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let serial = parts.next()?;
+            (serial.starts_with("emulator-") && parts.next() == Some("device"))
+                .then(|| serial.to_string())
+        })
+        .filter_map(|serial| {
+            let output = Command::new(&adb)
+                .args(["-s", &serial, "emu", "avd", "name"])
+                .output()
+                .ok()?;
+            // Output is "<avd name>\nOK"
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -139,6 +180,8 @@ pub async fn list_android_emulators() -> Result<Vec<Device>, String> {
             return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
         }
 
+        let running = running_avd_names();
+
         // Output may include INFO lines before the AVD names; AVD names contain no spaces
         let devices = String::from_utf8_lossy(&output.stdout)
             .lines()
@@ -148,7 +191,7 @@ pub async fn list_android_emulators() -> Result<Vec<Device>, String> {
                 id: name.to_string(),
                 name: name.replace('_', " "),
                 runtime: None,
-                state: None,
+                state: Some(if running.iter().any(|r| r == name) { "Booted" } else { "Shutdown" }.to_string()),
             })
             .collect();
         Ok(devices)
@@ -164,6 +207,16 @@ pub async fn launch_ios_simulator(udid: String) -> Result<(), String> {
     }
 
     tokio::task::spawn_blocking(move || {
+        // Check the live state first: if it's already running (or booting), do nothing
+        let already_running = ios_simulators_blocking()?
+            .iter()
+            .find(|d| d.id == udid)
+            .and_then(|d| d.state.as_deref())
+            .is_some_and(|state| state == "Booted" || state == "Booting");
+        if already_running {
+            return Ok(());
+        }
+
         let output = Command::new("xcrun")
             .args(["simctl", "boot", &udid])
             .output()
@@ -198,6 +251,11 @@ pub async fn launch_android_emulator(avd_name: String) -> Result<(), String> {
     }
 
     tokio::task::spawn_blocking(move || {
+        // Check the live state first: if it's already running, do nothing
+        if running_avd_names().iter().any(|name| name == &avd_name) {
+            return Ok(());
+        }
+
         let program = find_emulator_binary().unwrap_or_else(|| PathBuf::from("emulator"));
 
         let mut child = Command::new(&program)

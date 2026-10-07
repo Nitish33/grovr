@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as api from '@/lib/api';
 
+const POLL_INTERVAL_MS = 4000;
+
 export type DevicePlatform = 'ios' | 'android';
 
 function errorMessage(err: unknown): string {
@@ -45,6 +47,33 @@ export function useDevices(platform: DevicePlatform) {
 
   const refresh = useCallback(() => setReloadKey((k) => k + 1), []);
 
+  // Keep running/stopped state fresh (devices can be started or stopped outside Grovr)
+  useEffect(() => {
+    const list = platform === 'ios' ? api.listIosSimulators : api.listAndroidEmulators;
+    let cancelled = false;
+    let inFlight = false;
+
+    const id = setInterval(() => {
+      if (inFlight) return;
+      inFlight = true;
+      list()
+        .then((deviceList) => {
+          if (!cancelled) setDevices(deviceList);
+        })
+        .catch(() => {
+          // Keep the last good list; the initial load surfaces errors
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [platform]);
+
   const togglePin = useCallback(
     async (deviceId: string) => {
       const key = `${platform}:${deviceId}`;
@@ -71,10 +100,10 @@ export function useDevices(platform: DevicePlatform) {
       try {
         if (platform === 'ios') {
           await api.launchIosSimulator(deviceId);
-          refresh(); // pick up the new "Booted" state
         } else {
           await api.launchAndroidEmulator(deviceId);
         }
+        refresh(); // pick up the new "Booted" state; polling catches slow boots
       } catch (err) {
         setLaunchError(errorMessage(err));
       } finally {
