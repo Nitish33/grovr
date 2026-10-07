@@ -1,10 +1,12 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { readText } from '@tauri-apps/plugin-clipboard-manager';
-import { Check, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, Search, Trash2, X } from 'lucide-react';
+import { Check, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, History, Save, Search, Trash2, X } from 'lucide-react';
 import { ImagePreviewProvider } from '@/components/json/ImagePreview';
 import { JsonCode } from '@/components/json/JsonCode';
+import { JsonHistoryDialog, SaveJsonDialog } from '@/components/json/JsonSaveDialogs';
 import { JsonTree } from '@/components/json/JsonTree';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useSavedJson } from '@/hooks/useSavedJson';
 import { usePersistedString } from '@/hooks/usePersistedString';
 import * as api from '@/lib/api';
 import { parseLooseJson, searchJson, type JsonParseResult } from '@/lib/json';
@@ -44,6 +46,11 @@ export function JsonViewerWindow() {
   const [treeResetKey, setTreeResetKey] = useState(0);
   const [leftPct, setLeftPct] = useState(45);
   const [query, setQuery] = useState('');
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const saved = useSavedJson();
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const { copiedKey, copy } = useCopyToClipboard();
@@ -80,9 +87,32 @@ export function JsonViewerWindow() {
     [result, deferredQuery]
   );
 
-  // Cmd/Ctrl+F jumps to the search box
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 2000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const hasInput = input.trim() !== '';
+  const activeItem = saved.items.find((item) => item.id === activeSavedId);
+
+  // Updates the loaded/saved record in place; otherwise asks for a title
+  const requestSave = () => {
+    if (!hasInput) return;
+    if (activeItem) {
+      setToast(saved.update(activeItem.id, input) ? `Updated "${activeItem.title}"` : 'Could not save - storage is full');
+    } else {
+      setSaveOpen(true);
+    }
+  };
+
+  // Cmd/Ctrl+F jumps to the search box, Cmd/Ctrl+S saves
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        requestSave();
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         searchRef.current?.focus();
@@ -91,11 +121,12 @@ export function JsonViewerWindow() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  });
 
   const handlePaste = useCallback(async () => {
     try {
       setInput(await readText());
+      setActiveSavedId(null);
     } catch (err) {
       console.error('Failed to read clipboard:', err);
     }
@@ -136,7 +167,24 @@ export function JsonViewerWindow() {
                 <ClipboardPaste size={12} />
                 <span>Paste</span>
               </button>
-              <button className="json-button" onClick={() => setInput('')} disabled={!input} title="Clear input">
+              <button
+                className="json-button"
+                onClick={requestSave}
+                disabled={!hasInput}
+                title={activeItem ? `Update "${activeItem.title}"` : 'Save this JSON for later'}
+              >
+                <Save size={12} />
+                <span>Save</span>
+              </button>
+              <button className="json-button" onClick={() => setHistoryOpen(true)} title="Saved JSON history">
+                <History size={12} />
+                <span>History</span>
+              </button>
+              <button className="json-button" onClick={() => {
+                  setInput('');
+                  setActiveSavedId(null);
+                }}
+                disabled={!input} title="Clear input">
                 <Trash2 size={12} />
                 <span>Clear</span>
               </button>
@@ -261,6 +309,28 @@ export function JsonViewerWindow() {
         </section>
       </div>
     </div>
+    <SaveJsonDialog open={saveOpen} onOpenChange={setSaveOpen} onSave={(title) => {
+        const id = saved.save(title, input);
+        if (!id) return false;
+        setActiveSavedId(id);
+        setToast(`Saved "${title}"`);
+        return true;
+      }} />
+    <JsonHistoryDialog
+      open={historyOpen}
+      onOpenChange={setHistoryOpen}
+      items={saved.items}
+      onLoad={(item) => {
+        setInput(item.content);
+        setActiveSavedId(item.id);
+      }}
+      onDelete={saved.remove}
+    />
+    {toast && (
+      <div className="json-toast" role="status">
+        {toast}
+      </div>
+    )}
     </ImagePreviewProvider>
   );
 }

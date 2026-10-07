@@ -1378,3 +1378,20 @@ html, body, #root {
   background: hsl(var(--json-number) / 0.35);
   color: inherit;
 }
+
+.json-history-list { @apply flex flex-col gap-1 max-h-72 overflow-y-auto; }
+.json-history-item { @apply flex items-center gap-1; }
+.json-history-main {
+  @apply flex flex-col flex-1 min-w-0 px-2 py-1 text-left rounded-md transition-colors;
+}
+.json-history-main:hover { background: hsl(var(--secondary)); }
+.json-history-main:focus-visible { @apply outline-none ring-2 ring-ring; }
+.json-history-title { @apply text-xs truncate; }
+.json-history-date { @apply text-[10px]; color: hsl(var(--muted-foreground)); }
+.json-toast {
+  @apply fixed bottom-4 left-1/2 z-50 px-3 py-1.5 rounded-md text-xs shadow-lg;
+  transform: translateX(-50%);
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+}
