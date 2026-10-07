@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import * as api from '@/lib/api';
 
 const POLL_INTERVAL_MS = 4000;
+export const MAX_NOTE_LENGTH = 80;
 
 export type DevicePlatform = 'ios' | 'android';
 
@@ -13,6 +14,7 @@ function errorMessage(err: unknown): string {
 export function useDevices(platform: DevicePlatform) {
   const [devices, setDevices] = useState<api.Device[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -30,6 +32,7 @@ export function useDevices(platform: DevicePlatform) {
         if (cancelled) return;
         setDevices(deviceList);
         setPinned(settings.pinned_devices ?? []);
+        setNotes(settings.device_notes ?? {});
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -93,6 +96,28 @@ export function useDevices(platform: DevicePlatform) {
     [platform, pinned]
   );
 
+  const saveNote = useCallback(
+    async (deviceId: string, note: string) => {
+      const key = `${platform}:${deviceId}`;
+      const trimmed = note.trim().slice(0, MAX_NOTE_LENGTH);
+      const previous = notes;
+
+      setNotes((current) => {
+        const next = { ...current };
+        if (trimmed === '') delete next[key];
+        else next[key] = trimmed;
+        return next;
+      });
+      try {
+        await api.setDeviceNote(key, trimmed);
+      } catch (err) {
+        console.error('Failed to save device note:', err);
+        setNotes(previous);
+      }
+    },
+    [platform, notes]
+  );
+
   const launch = useCallback(
     async (deviceId: string) => {
       setLaunchingId(deviceId);
@@ -113,5 +138,7 @@ export function useDevices(platform: DevicePlatform) {
     [platform, refresh]
   );
 
-  return { devices, pinned, loading, error, refresh, togglePin, launch, launchingId, launchError };
+  return {
+    devices, pinned, notes, loading, error, refresh, togglePin, saveNote, launch, launchingId, launchError,
+  };
 }

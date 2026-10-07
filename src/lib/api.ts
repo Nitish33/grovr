@@ -52,6 +52,7 @@ export interface BackendAppSettings {
   jira_configs: unknown[];
   global_shortcut?: string;
   pinned_devices?: string[];
+  device_notes?: Record<string, string>;
 }
 
 // ============ Devices API ============
@@ -77,6 +78,10 @@ export async function launchIosSimulator(udid: string): Promise<void> {
 
 export async function launchAndroidEmulator(avdName: string): Promise<void> {
   return invoke('launch_android_emulator', { avdName });
+}
+
+export async function setDeviceNote(key: string, note: string): Promise<void> {
+  return invoke('set_device_note', { key, note });
 }
 
 export async function setPinnedDevices(pinned: string[]): Promise<void> {

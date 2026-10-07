@@ -16,6 +16,7 @@ use commands::settings::{
     set_fetch_before_create, set_global_shortcut, set_ide, set_last_used_project,
     set_launch_at_startup, set_onboarding_completed, set_refresh_interval_minutes,
     set_skip_open_ide_confirm, set_theme, set_worktree_memo, set_pinned_devices,
+    set_device_note,
 };
 use commands::windows::open_json_viewer;
 use commands::devices::{
@@ -123,6 +124,7 @@ pub fn run() {
             set_worktree_memo,
             set_global_shortcut,
             set_pinned_devices,
+            set_device_note,
             // Projects
             get_projects,
             add_project,

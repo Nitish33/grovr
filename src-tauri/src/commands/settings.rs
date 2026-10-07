@@ -195,6 +195,26 @@ pub fn set_pinned_devices(
     save_settings(&app, &settings)
 }
 
+const MAX_DEVICE_NOTE_CHARS: usize = 200;
+
+/// Sets (or, when blank, removes) the note for a device. Key is "ios:<udid>" or "android:<avd>".
+#[tauri::command]
+pub fn set_device_note(
+    app: tauri::AppHandle,
+    state: State<SettingsState>,
+    key: String,
+    note: String,
+) -> Result<(), String> {
+    let note: String = note.trim().chars().take(MAX_DEVICE_NOTE_CHARS).collect();
+    let mut settings = state.0.lock().map_err(|e| e.to_string())?;
+    if note.is_empty() {
+        settings.device_notes.remove(&key);
+    } else {
+        settings.device_notes.insert(key, note);
+    }
+    save_settings(&app, &settings)
+}
+
 #[tauri::command]
 pub fn get_worktree_memo(
     state: State<SettingsState>,

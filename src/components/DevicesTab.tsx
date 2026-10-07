@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Pin, PinOff, RefreshCw, Smartphone } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { DeviceNote } from '@/components/DeviceNote';
 import { useDevices, type DevicePlatform } from '@/hooks/useDevices';
 import type { Device } from '@/lib/api';
 
@@ -15,7 +16,7 @@ const COPY: Record<DevicePlatform, { noun: string; empty: string }> = {
 
 export function DevicesTab({ platform }: DevicesTabProps) {
   const {
-    devices, pinned, loading, error, refresh, togglePin, launch, launchingId, launchError,
+    devices, pinned, notes, loading, error, refresh, togglePin, saveNote, launch, launchingId, launchError,
   } = useDevices(platform);
   const { noun, empty } = COPY[platform];
 
@@ -48,6 +49,11 @@ export function DevicesTab({ platform }: DevicesTabProps) {
             running && <span className="device-row-badge">Running</span>
           )}
         </button>
+        <DeviceNote
+          note={notes[`${platform}:${device.id}`] ?? ''}
+          deviceName={device.name}
+          onSave={(note) => void saveNote(device.id, note)}
+        />
         <button
           className={`worktree-action device-pin ${isPinned ? 'device-pin-active' : ''}`}
           title={isPinned ? `Unpin ${noun}` : `Pin ${noun} to top`}
@@ -73,7 +79,7 @@ export function DevicesTab({ platform }: DevicesTabProps) {
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="pl-2 pr-3 pb-2">
+        <div className="devices-table pl-2 pr-3 pb-2">
           {error && <div className="devices-message">{error}</div>}
           {launchError && <div className="devices-message">{launchError}</div>}
           {!error && !loading && devices.length === 0 && <div className="devices-message">{empty}</div>}

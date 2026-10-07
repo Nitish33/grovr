@@ -173,22 +173,31 @@ html, body, #root {
   @apply text-xs;
   color: hsl(var(--muted-foreground));
 }
+.devices-table {
+  @apply grid;
+  /* name + runtime | note | pin: notes line up across rows */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
 .devices-section-label {
   @apply px-3 pt-2 pb-1 text-xs font-medium;
+  grid-column: 1 / -1;
   color: hsl(var(--muted-foreground) / 0.65);
 }
 .devices-message {
   @apply px-3 py-4 text-xs text-center;
+  grid-column: 1 / -1;
   color: hsl(var(--muted-foreground));
 }
 .device-row {
-  @apply flex items-center gap-2 pr-3 rounded-md text-xs transition-colors;
-}
-.device-row-main {
-  @apply flex flex-1 min-w-0 items-center gap-2 pl-3 py-1.5 text-left rounded-md cursor-pointer disabled:cursor-default;
-  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+  @apply grid items-center rounded-md text-xs transition-colors;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
 }
 .device-row:hover { background: hsl(var(--accent) / 0.5); }
+.device-row-main {
+  @apply flex min-w-0 items-center gap-2 pl-3 pr-4 py-1.5 text-left rounded-md cursor-pointer disabled:cursor-default;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+}
 .device-row-icon { color: hsl(var(--muted-foreground)); @apply flex-shrink-0; }
 .device-row-name { @apply truncate; }
 .device-row-meta { @apply flex-shrink-0; color: hsl(var(--muted-foreground)); }
@@ -197,7 +206,23 @@ html, body, #root {
   background: hsl(var(--secondary));
   color: hsl(var(--foreground));
 }
-.device-pin { @apply flex-shrink-0 opacity-0; }
+.device-note {
+  @apply min-w-0 truncate text-left px-2 py-1 rounded text-xs cursor-text;
+  color: hsl(var(--muted-foreground));
+}
+.device-note:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.device-note:focus-visible { @apply outline-none ring-2 ring-ring; }
+.device-note-empty { @apply opacity-0; }
+.device-row:hover .device-note-empty,
+.device-note-empty:focus-visible { @apply opacity-100; }
+.device-note-input {
+  @apply min-w-0 px-2 py-1 rounded text-xs outline-none;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--ring));
+  color: hsl(var(--foreground));
+}
+.device-note-input::placeholder { color: hsl(var(--muted-foreground)); }
+.device-pin { @apply flex-shrink-0 opacity-0 mr-1; }
 .device-row:hover .device-pin,
 .device-pin:focus-visible,
 .device-pin-active { @apply opacity-100; }

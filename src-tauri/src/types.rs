@@ -121,6 +121,9 @@ pub struct AppSettings {
     /// Pinned simulators/emulators, namespaced as "ios:<udid>" or "android:<avd>"
     #[serde(default)]
     pub pinned_devices: Vec<String>,
+    /// Short user notes for simulators/emulators, keyed like `pinned_devices`
+    #[serde(default)]
+    pub device_notes: HashMap<String, String>,
 }
 
 fn default_theme() -> String {
