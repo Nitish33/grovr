@@ -112,10 +112,10 @@ html, body, #root {
 
 /* Main tabs */
 .main-tabs {
-  @apply flex items-center gap-1 px-3 pb-1 flex-shrink-0;
+  @apply flex items-center gap-1 px-3 pb-1 flex-shrink-0 overflow-x-auto;
 }
 .main-tab {
-  @apply px-2.5 py-1 rounded-md text-xs font-medium transition-colors;
+  @apply px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0;
   color: hsl(var(--muted-foreground));
 }
 .main-tab:hover {
@@ -215,6 +215,31 @@ html, body, #root {
 .note-action-active { @apply opacity-100; }
 .note-action:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
 .note-action:focus-visible { @apply outline-none ring-2 ring-ring; }
+
+/* Quick links */
+.link-fields { @apply flex items-center gap-2; }
+.link-fields-edit { @apply flex-1 min-w-0; }
+.link-name-input,
+.link-url-input {
+  @apply px-3 py-1.5 rounded-md text-xs outline-none min-w-0;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.link-name-input { @apply w-40 flex-shrink-0; }
+.link-url-input { @apply flex-1; }
+.link-name-input:focus-visible,
+.link-url-input:focus-visible { border-color: hsl(var(--ring)); }
+.link-name-input::placeholder,
+.link-url-input::placeholder { color: hsl(var(--muted-foreground)); }
+.link-input-invalid { border-color: hsl(var(--destructive)); }
+.link-error { @apply pt-1 text-xs; color: hsl(var(--destructive)); }
+.link-main {
+  @apply flex flex-col flex-1 min-w-0 px-2 py-1 text-left rounded-md cursor-pointer;
+}
+.link-main:focus-visible { @apply outline-none ring-2 ring-ring; }
+.link-name { @apply text-xs truncate; }
+.link-url { @apply text-xs truncate; color: hsl(var(--muted-foreground)); }
 
 /* Devices (simulators / emulators) */
 .devices-toolbar {
@@ -1260,6 +1285,8 @@ html, body, #root {
   @apply relative pr-8 whitespace-pre-wrap rounded; /* pr leaves room for the copy button */
   overflow-wrap: anywhere; /* wrap long URLs/tokens that have no spaces */
 }
+.json-line:hover { background: hsl(var(--accent) / 0.5); }
+.json-line-copy { @apply absolute right-1 top-0; } /* out of the text flow, so it never changes line height */
 .json-tree {
   @apply font-mono text-xs;
 }
@@ -1285,14 +1312,13 @@ html, body, #root {
 .json-null { color: hsl(var(--json-null)); }
 .json-actions {
   @apply ml-1 flex items-center gap-0.5 flex-shrink-0;
-.json-line:hover { background: hsl(var(--accent) / 0.5); }
-.json-line-copy { @apply absolute right-1 top-0; } /* out of the text flow, so it never changes line height */
 }
 .json-action {
   @apply w-5 h-5 rounded flex items-center justify-center opacity-0 transition-opacity;
   color: hsl(var(--muted-foreground));
 }
 .json-row:hover .json-action,
+.json-line:hover .json-action,
 .json-action:focus-visible { @apply opacity-100; }
 .json-action:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
 .json-action:focus-visible { @apply outline-none ring-2 ring-ring; }
@@ -1318,7 +1344,6 @@ html, body, #root {
 .image-preview {
   @apply fixed z-50 p-1 rounded-md shadow-lg pointer-events-none;
   background: hsl(var(--card));
-.json-line:hover .json-action,
   border: 1px solid hsl(var(--border));
 }
 .image-preview-img {

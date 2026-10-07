@@ -41,6 +41,13 @@ export interface Note {
   pinned: boolean;
 }
 
+export interface QuickLink {
+  id: string;
+  name: string;
+  url: string;
+  pinned: boolean;
+}
+
 export interface BackendAppSettings {
   ide?: BackendIdeConfig;
   theme: string;
@@ -60,6 +67,7 @@ export interface BackendAppSettings {
   pinned_devices?: string[];
   device_notes?: Record<string, string>;
   notes?: Note[];
+  quick_links?: QuickLink[];
 }
 
 // ============ Devices API ============
@@ -85,6 +93,14 @@ export async function launchIosSimulator(udid: string): Promise<void> {
 
 export async function launchAndroidEmulator(avdName: string): Promise<void> {
   return invoke('launch_android_emulator', { avdName });
+}
+
+export async function setQuickLinks(links: QuickLink[]): Promise<void> {
+  return invoke('set_quick_links', { links });
+}
+
+export async function openLink(url: string): Promise<void> {
+  return invoke('open_link', { url });
 }
 
 export async function setNotes(notes: Note[]): Promise<void> {

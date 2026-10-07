@@ -1,4 +1,4 @@
-use crate::types::{AppSettings, IdeConfig, NoteItem, WorktreeMemo};
+use crate::types::{AppSettings, IdeConfig, NoteItem, QuickLinkItem, WorktreeMemo};
 use tauri::{Manager, State};
 #[cfg(not(target_os = "macos"))]
 use tauri_plugin_autostart::ManagerExt;
@@ -237,6 +237,37 @@ pub fn set_notes(
 
     let mut settings = state.0.lock().map_err(|e| e.to_string())?;
     settings.notes = cleaned;
+    save_settings(&app, &settings)
+}
+
+const MAX_QUICK_LINKS: usize = 500;
+const MAX_LINK_NAME_CHARS: usize = 100;
+const MAX_LINK_URL_CHARS: usize = 2_000;
+
+/// Replaces the full list of Quick links (pinned first, then by user order).
+/// Entries without a URL are dropped and sizes are capped.
+#[tauri::command]
+pub fn set_quick_links(
+    app: tauri::AppHandle,
+    state: State<SettingsState>,
+    links: Vec<QuickLinkItem>,
+) -> Result<(), String> {
+    let cleaned: Vec<QuickLinkItem> = links
+        .into_iter()
+        .filter_map(|link| {
+            let url: String = link.url.trim().chars().take(MAX_LINK_URL_CHARS).collect();
+            if url.is_empty() {
+                return None;
+            }
+            let name: String = link.name.trim().chars().take(MAX_LINK_NAME_CHARS).collect();
+            let name = if name.is_empty() { url.clone() } else { name };
+            Some(QuickLinkItem { id: link.id, name, url, pinned: link.pinned })
+        })
+        .take(MAX_QUICK_LINKS)
+        .collect();
+
+    let mut settings = state.0.lock().map_err(|e| e.to_string())?;
+    settings.quick_links = cleaned;
     save_settings(&app, &settings)
 }
 

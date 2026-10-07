@@ -16,8 +16,9 @@ use commands::settings::{
     set_fetch_before_create, set_global_shortcut, set_ide, set_last_used_project,
     set_launch_at_startup, set_onboarding_completed, set_refresh_interval_minutes,
     set_skip_open_ide_confirm, set_theme, set_worktree_memo, set_pinned_devices,
-    set_device_note, set_notes,
+    set_device_note, set_notes, set_quick_links,
 };
+use commands::links::open_link;
 use commands::windows::open_json_viewer;
 use commands::devices::{
     list_ios_simulators, list_android_emulators, launch_ios_simulator, launch_android_emulator,
@@ -126,6 +127,7 @@ pub fn run() {
             set_pinned_devices,
             set_device_note,
             set_notes,
+            set_quick_links,
             // Projects
             get_projects,
             add_project,
@@ -176,6 +178,8 @@ pub fn run() {
             list_android_emulators,
             launch_ios_simulator,
             launch_android_emulator,
+            // Links
+            open_link,
             // Windows
             open_json_viewer,
             // Clipboard

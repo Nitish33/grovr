@@ -93,6 +93,16 @@ pub struct NoteItem {
     pub pinned: bool,
 }
 
+/// A named link from the Quick links tab
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct QuickLinkItem {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub pinned: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct AppSettings {
     #[serde(default)]
@@ -136,6 +146,9 @@ pub struct AppSettings {
     /// Quick-copy notes, newest first
     #[serde(default)]
     pub notes: Vec<NoteItem>,
+    /// Quick links (pinned first, then by user order)
+    #[serde(default)]
+    pub quick_links: Vec<QuickLinkItem>,
 }
 
 fn default_theme() -> String {

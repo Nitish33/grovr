@@ -59,6 +59,7 @@ import xcodeIcon from '@/assets/ide-icons/xcode.svg';
 import androidStudioIcon from '@/assets/ide-icons/android-studio.svg';
 import { DevicesTab } from '@/components/DevicesTab';
 import { NotesTab } from '@/components/NotesTab';
+import { QuickLinksTab } from '@/components/QuickLinksTab';
 import { ToolsTab } from '@/components/ToolsTab';
 import { useNativeProjects } from '@/hooks/useNativeProjects';
 import { getIDEInfo } from '@/lib/ide-config';
@@ -68,7 +69,7 @@ import type { UpdateInfo } from '@/lib/updater';
 import type { Project, Worktree, IDEPreset } from '@/types';
 import type { PullRequestInfo, JiraIssueInfo } from '@/lib/api';
 
-type MainTab = 'worktree' | 'tools' | 'simulator' | 'emulator' | 'notes';
+type MainTab = 'worktree' | 'tools' | 'simulator' | 'emulator' | 'notes' | 'links';
 
 const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'worktree', label: 'Worktree' },
@@ -76,6 +77,7 @@ const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'simulator', label: 'Simulator' },
   { id: 'emulator', label: 'Emulator' },
   { id: 'notes', label: 'Notes' },
+  { id: 'links', label: 'Quick links' },
 ];
 
 interface WorktreeListPageProps {
@@ -704,6 +706,17 @@ export function WorktreeListPage({
           className="flex-1 min-h-0 flex flex-col"
         >
           <NotesTab />
+        </div>
+      )}
+
+      {activeTab === 'links' && (
+        <div
+          id="main-tabpanel-links"
+          role="tabpanel"
+          aria-labelledby="main-tab-links"
+          className="flex-1 min-h-0 flex flex-col"
+        >
+          <QuickLinksTab />
         </div>
       )}
 
