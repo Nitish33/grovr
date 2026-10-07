@@ -233,6 +233,23 @@ export async function openTerminal(path: string): Promise<void> {
   return invoke('open_terminal', { path });
 }
 
+export interface NativeProjects {
+  ios_project: string | null;
+  android_dir: string | null;
+}
+
+export async function detectNativeProjects(path: string): Promise<NativeProjects> {
+  return invoke('detect_native_projects', { path });
+}
+
+export async function openXcode(path: string): Promise<void> {
+  return invoke('open_xcode', { path });
+}
+
+export async function openAndroidStudio(path: string): Promise<void> {
+  return invoke('open_android_studio', { path });
+}
+
 export async function copyPathsToWorktree(
   sourcePath: string,
   targetPath: string,

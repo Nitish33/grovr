@@ -606,6 +606,108 @@ pub fn open_terminal(path: String) -> Result<(), String> {
     Ok(())
 }
 
+// ============ React Native / Native Project Helpers ============
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct NativeProjects {
+    /// `.xcworkspace` (or `.xcodeproj` fallback) inside `<path>/ios`. macOS only.
+    pub ios_project: Option<String>,
+    /// `<path>/android` when it looks like a Gradle project.
+    pub android_dir: Option<String>,
+}
+
+fn detect_ios_project(root: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(root.join("ios")).ok()?;
+    let mut workspaces = Vec::new();
+    let mut projects = Vec::new();
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path().to_string_lossy().to_string();
+        if name.ends_with(".xcworkspace") && name != "Pods.xcworkspace" {
+            workspaces.push(path);
+        } else if name.ends_with(".xcodeproj") {
+            projects.push(path);
+        }
+    }
+
+    workspaces.sort();
+    projects.sort();
+    workspaces.into_iter().next().or_else(|| projects.into_iter().next())
+}
+
+fn detect_android_dir(root: &Path) -> Option<String> {
+    let dir = root.join("android");
+    let is_gradle = [
+        "settings.gradle",
+        "settings.gradle.kts",
+        "build.gradle",
+        "build.gradle.kts",
+    ]
+    .iter()
+    .any(|f| dir.join(f).is_file());
+
+    is_gradle.then(|| dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn detect_native_projects(path: String) -> Result<NativeProjects, String> {
+    let root = Path::new(&path);
+    Ok(NativeProjects {
+        ios_project: if cfg!(target_os = "macos") { detect_ios_project(root) } else { None },
+        android_dir: detect_android_dir(root),
+    })
+}
+
+#[tauri::command]
+pub fn open_xcode(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("open")
+            .args(["-a", "Xcode", &path])
+            .output()
+            .map_err(|e| format!("Failed to open Xcode: {}", e))?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Err("Xcode is only available on macOS".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn open_android_studio(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("open")
+            .args(["-a", "Android Studio", &path])
+            .output()
+            .map_err(|e| format!("Failed to open Android Studio: {}", e))?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Android Studio's launcher is `studio64` on Windows and `studio` on Linux
+        let launcher = if cfg!(target_os = "windows") { "studio64" } else { "studio" };
+        Command::new(launcher)
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open Android Studio ({}): {}", launcher, e))?;
+        Ok(())
+    }
+}
+
 #[tauri::command]
 pub fn copy_paths_to_worktree(
     source_path: String,

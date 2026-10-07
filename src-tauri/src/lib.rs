@@ -22,7 +22,8 @@ use commands::git::{
     get_worktrees, create_worktree, create_worktree_existing_branch, remove_worktree,
     prune_worktrees, get_worktree_status, get_branches, get_current_branch, get_default_branch,
     delete_branch, rename_branch, git_fetch, git_pull, get_github_remote_info, open_ide,
-    open_in_finder, open_terminal, copy_paths_to_worktree,
+    open_in_finder, open_terminal, copy_paths_to_worktree, detect_native_projects,
+    open_xcode, open_android_studio,
 };
 use commands::clipboard::read_clipboard_text;
 use commands::integrations::{
@@ -146,6 +147,9 @@ pub fn run() {
             open_in_finder,
             open_terminal,
             copy_paths_to_worktree,
+            detect_native_projects,
+            open_xcode,
+            open_android_studio,
             // Integrations - GitHub
             get_github_config,
             set_github_config,

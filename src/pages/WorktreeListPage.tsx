@@ -28,6 +28,8 @@ import {
   RefreshCw,
   Folder,
   Terminal,
+  Hammer,
+  Bot,
   GitBranchPlus,
   Pencil,
   ExternalLink,
@@ -54,6 +56,7 @@ import {
 } from '@/components/ui/modal';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { AlertModal } from '@/components/ui/alert-modal';
+import { useNativeProjects } from '@/hooks/useNativeProjects';
 import { getIDEInfo } from '@/lib/ide-config';
 import * as api from '@/lib/api';
 import { UpdateBadge } from '@/components/ui/update-badge';
@@ -957,7 +960,7 @@ function ProjectCard({
               showDescription ? 'minmax(0, 1fr)' : null,
               showGitHub ? '80px' : null,
               showJira ? '80px' : null,
-              '44px',
+              '140px',
             ].filter(Boolean).join(' '),
           }}
         >
@@ -1024,6 +1027,15 @@ function WorktreeRow({
   }>({ left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const native = useNativeProjects(worktree.path);
+
+  const openNative = async (open: () => Promise<void>, label: string) => {
+    try {
+      await open();
+    } catch (err) {
+      console.error(`Failed to open ${label}:`, err);
+    }
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1162,6 +1174,56 @@ function WorktreeRow({
 
       {/* Actions */}
       <div className="worktree-col-actions">
+        {native.ios_project && (
+          <button
+            className="worktree-action worktree-quick-action"
+            title="Open in Xcode"
+            aria-label="Open in Xcode"
+            onClick={(e) => {
+              e.stopPropagation();
+              const project = native.ios_project!;
+              void openNative(() => api.openXcode(project), 'Xcode');
+            }}
+          >
+            <Hammer size={14} />
+          </button>
+        )}
+        {native.android_dir && (
+          <button
+            className="worktree-action worktree-quick-action"
+            title="Open in Android Studio"
+            aria-label="Open in Android Studio"
+            onClick={(e) => {
+              e.stopPropagation();
+              const dir = native.android_dir!;
+              void openNative(() => api.openAndroidStudio(dir), 'Android Studio');
+            }}
+          >
+            <Bot size={14} />
+          </button>
+        )}
+        <button
+          className="worktree-action worktree-quick-action"
+          title="Open in terminal"
+          aria-label="Open in terminal"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenTerminal(worktree.path);
+          }}
+        >
+          <Terminal size={14} />
+        </button>
+        <button
+          className="worktree-action worktree-quick-action"
+          title="Open in folder"
+          aria-label="Open in folder"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenFinder(worktree.path);
+          }}
+        >
+          <Folder size={14} />
+        </button>
         <button
           ref={buttonRef}
           className="worktree-more"
@@ -1190,28 +1252,6 @@ function WorktreeRow({
             >
               <Pencil size={14} />
               <span>Edit</span>
-            </button>
-            <button
-              className="worktree-dropdown-item"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenFinder(worktree.path);
-                setShowActions(false);
-              }}
-            >
-              <Folder size={14} />
-              <span>Open in Finder</span>
-            </button>
-            <button
-              className="worktree-dropdown-item"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenTerminal(worktree.path);
-                setShowActions(false);
-              }}
-            >
-              <Terminal size={14} />
-              <span>Open Terminal</span>
             </button>
             {!worktree.isMain && (
               <>
