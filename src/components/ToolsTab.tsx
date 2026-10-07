@@ -1,4 +1,5 @@
 import { ColorConverter } from '@/components/tools/ColorConverter';
+import { JsonViewerLauncher } from '@/components/tools/JsonViewerLauncher';
 import { LoremIpsum } from '@/components/tools/LoremIpsum';
 import { OpacityToHex } from '@/components/tools/OpacityToHex';
 
@@ -8,6 +9,7 @@ export function ToolsTab() {
       <OpacityToHex />
       <ColorConverter />
       <LoremIpsum />
+      <JsonViewerLauncher />
     </div>
   );
 }

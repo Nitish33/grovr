@@ -11,25 +11,15 @@ import * as api from '@/lib/api';
 import { parseDeepLink, findBestMatchingProject } from '@/lib/deep-link';
 import { checkForUpdates, type UpdateInfo } from '@/lib/updater';
 import type { Project, Worktree, IDEPreset, DeepLinkParams } from '@/types';
+import { applyTheme, type ThemeMode } from '@/lib/theme';
 import './index.css';
 
 type Page = 'worktrees' | 'settings' | 'project-settings' | 'add-project' | 'create-worktree' | 'edit-worktree';
-type ThemeMode = 'system' | 'light' | 'dark';
 
 interface ParsedClipboard {
   issueNumber: string;
   description: string;
   branchName?: string;
-}
-
-function applyTheme(theme: ThemeMode) {
-  const root = document.documentElement;
-  if (theme === 'system') {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.classList.toggle('dark', prefersDark);
-  } else {
-    root.classList.toggle('dark', theme === 'dark');
-  }
 }
 
 function App() {

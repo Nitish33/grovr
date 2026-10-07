@@ -22,6 +22,11 @@
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --sidebar-bg: 240 4.8% 97%;
+    --json-key: 215 60% 40%;
+    --json-string: 140 45% 32%;
+    --json-number: 25 85% 42%;
+    --json-boolean: 280 50% 48%;
+    --json-null: 240 4% 50%;
   }
 
   .dark {
@@ -42,6 +47,11 @@
     --border: 240 4% 20%;
     --ring: 240 4.9% 83.9%;
     --sidebar-bg: 240 5% 14%;
+    --json-key: 210 70% 72%;
+    --json-string: 140 40% 66%;
+    --json-number: 30 85% 66%;
+    --json-boolean: 280 55% 74%;
+    --json-null: 240 5% 62%;
   }
 }
 
@@ -1096,5 +1106,144 @@ html, body, #root {
 
 .page-subtitle {
   @apply text-sm mt-1 mb-2;
+  color: hsl(var(--muted-foreground));
+}
+
+/* JSON viewer window */
+.json-split {
+  @apply grid flex-1 min-h-0;
+}
+.json-pane {
+  @apply flex flex-col min-w-0 min-h-0;
+}
+.json-divider {
+  @apply cursor-col-resize transition-colors;
+  background: hsl(var(--border));
+}
+.json-divider:hover,
+.json-divider:focus-visible {
+  @apply outline-none;
+  background: hsl(var(--ring));
+}
+.json-toolbar {
+  @apply flex items-center justify-between gap-2 px-3 py-2 flex-shrink-0;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.json-toolbar-title {
+  @apply text-xs font-medium;
+  color: hsl(var(--muted-foreground));
+}
+.json-toolbar-actions {
+  @apply flex items-center gap-1;
+}
+.json-button {
+  @apply flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors;
+  color: hsl(var(--muted-foreground));
+}
+.json-button:hover:not(:disabled) {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+.json-button:disabled { @apply opacity-40; }
+.json-button:focus-visible { @apply outline-none ring-2 ring-ring; }
+.json-segmented {
+  @apply flex items-center gap-0.5 p-0.5 rounded-md;
+  background: hsl(var(--secondary));
+}
+.json-segment {
+  @apply px-3 py-1 rounded text-xs font-medium transition-colors;
+  color: hsl(var(--muted-foreground));
+}
+.json-segment-active {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.json-segment:focus-visible { @apply outline-none ring-2 ring-ring; }
+.json-status {
+  @apply px-3 py-1 text-xs flex-shrink-0;
+  color: hsl(var(--muted-foreground));
+}
+.json-status-error { color: hsl(var(--destructive)); }
+.json-input {
+  @apply flex-1 min-h-0 w-full resize-none p-3 font-mono text-xs outline-none;
+  background: transparent;
+  color: hsl(var(--foreground));
+}
+.json-input::placeholder { color: hsl(var(--muted-foreground)); }
+.json-output {
+  @apply flex-1 min-h-0 overflow-auto px-3 pb-3;
+}
+.json-code {
+  @apply font-mono text-xs whitespace-pre;
+}
+.json-tree {
+  @apply font-mono text-xs;
+}
+.json-row {
+  @apply flex items-center gap-1 py-0.5 rounded;
+}
+.json-row:hover { background: hsl(var(--accent) / 0.5); }
+.json-toggle {
+  @apply w-4 h-4 flex items-center justify-center flex-shrink-0;
+  color: hsl(var(--muted-foreground));
+}
+.json-children {
+  @apply ml-2 pl-3;
+  border-left: 1px solid hsl(var(--border));
+}
+.json-key { color: hsl(var(--json-key)); }
+.json-index { color: hsl(var(--muted-foreground)); }
+.json-punct { color: hsl(var(--muted-foreground)); }
+.json-count { color: hsl(var(--muted-foreground)); }
+.json-string { color: hsl(var(--json-string)); @apply break-all; }
+.json-number { color: hsl(var(--json-number)); }
+.json-boolean { color: hsl(var(--json-boolean)); }
+.json-null { color: hsl(var(--json-null)); }
+.json-actions {
+  @apply ml-1 flex items-center gap-0.5 flex-shrink-0;
+}
+.json-action {
+  @apply w-5 h-5 rounded flex items-center justify-center opacity-0 transition-opacity;
+  color: hsl(var(--muted-foreground));
+}
+.json-row:hover .json-action,
+.json-action:focus-visible { @apply opacity-100; }
+.json-action:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.json-action:focus-visible { @apply outline-none ring-2 ring-ring; }
+.json-more {
+  @apply px-2 py-1 text-xs rounded-md;
+  color: hsl(var(--muted-foreground));
+}
+.json-more:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.json-error {
+  @apply p-3 rounded-md text-xs space-y-1;
+  background: hsl(var(--destructive) / 0.1);
+  border: 1px solid hsl(var(--destructive) / 0.4);
+}
+.json-error-title { @apply font-medium; color: hsl(var(--destructive)); }
+.json-error-location { color: hsl(var(--muted-foreground)); }
+.json-error-line {
+  @apply mt-1 p-2 rounded font-mono overflow-auto;
+  background: hsl(var(--secondary));
+}
+.json-image-link {
+  @apply underline decoration-dotted underline-offset-2 cursor-zoom-in;
+}
+.image-preview {
+  @apply fixed z-50 p-1 rounded-md shadow-lg pointer-events-none;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+}
+.image-preview-img {
+  @apply block max-w-xs max-h-72 object-contain rounded;
+  /* Light checkerboard in both themes so transparent images render as designed */
+  background-color: hsl(0 0% 100%);
+  background-image: conic-gradient(
+    hsl(0 0% 90%) 25%, transparent 0 50%, hsl(0 0% 90%) 0 75%, transparent 0
+  );
+  background-size: 16px 16px;
+}
+.image-preview-error {
+  @apply px-3 py-2 text-xs;
   color: hsl(var(--muted-foreground));
 }

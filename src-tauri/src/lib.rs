@@ -17,6 +17,7 @@ use commands::settings::{
     set_launch_at_startup, set_onboarding_completed, set_refresh_interval_minutes,
     set_skip_open_ide_confirm, set_theme, set_worktree_memo, set_pinned_devices,
 };
+use commands::windows::open_json_viewer;
 use commands::devices::{
     list_ios_simulators, list_android_emulators, launch_ios_simulator, launch_android_emulator,
 };
@@ -172,6 +173,8 @@ pub fn run() {
             list_android_emulators,
             launch_ios_simulator,
             launch_android_emulator,
+            // Windows
+            open_json_viewer,
             // Clipboard
             read_clipboard_text,
         ])

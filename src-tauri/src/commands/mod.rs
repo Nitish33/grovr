@@ -4,3 +4,4 @@ pub mod projects;
 pub mod git;
 pub mod integrations;
 pub mod devices;
+pub mod windows;

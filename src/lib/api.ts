@@ -83,6 +83,12 @@ export async function setPinnedDevices(pinned: string[]): Promise<void> {
   return invoke('set_pinned_devices', { pinned });
 }
 
+// ============ Windows API ============
+
+export async function openJsonViewer(): Promise<void> {
+  return invoke('open_json_viewer');
+}
+
 // ============ Clipboard API ============
 
 export async function readClipboardText(): Promise<string> {
