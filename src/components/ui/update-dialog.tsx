@@ -69,7 +69,7 @@ export function UpdateDialog({ updateInfo, open, onOpenChange }: UpdateDialogPro
         <ModalHeader>
           <ModalTitle>✨ Update Available</ModalTitle>
           <ModalDescription>
-            A new version of Grovr is available.
+            A new version of DevTool is available.
           </ModalDescription>
         </ModalHeader>
 

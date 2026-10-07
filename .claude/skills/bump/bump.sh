@@ -54,7 +54,7 @@ if [[ "$BRANCH" != "main" ]]; then
   fi
 fi
 
-echo -e "${BLUE}=== Grovr Bump & Build ===${NC}"
+echo -e "${BLUE}=== DevTool Bump & Build ===${NC}"
 echo ""
 
 # Get current version
@@ -127,7 +127,7 @@ pnpm tauri build
 # === Step 4: Verify code signature ===
 echo ""
 echo "Verifying code signature..."
-SIGNATURE_INFO=$(codesign -dv --verbose=2 src-tauri/target/release/bundle/macos/Grovr.app 2>&1 || true)
+SIGNATURE_INFO=$(codesign -dv --verbose=2 src-tauri/target/release/bundle/macos/DevTool.app 2>&1 || true)
 
 if echo "$SIGNATURE_INFO" | grep -q "Authority=Developer ID"; then
   echo -e "${GREEN}✓${NC} Code signature verified"
@@ -142,7 +142,7 @@ fi
 echo ""
 echo "Generating latest.json..."
 
-SIGNATURE=$(cat src-tauri/target/release/bundle/macos/Grovr.app.tar.gz.sig)
+SIGNATURE=$(cat src-tauri/target/release/bundle/macos/DevTool.app.tar.gz.sig)
 PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Detect architecture
@@ -161,7 +161,7 @@ cat > src-tauri/target/release/bundle/latest.json << EOF
   "platforms": {
     "$PLATFORM": {
       "signature": "$SIGNATURE",
-      "url": "https://github.com/j1king/grovr/releases/download/v$VERSION/Grovr.app.tar.gz"
+      "url": "https://github.com/j1king/grovr/releases/download/v$VERSION/DevTool.app.tar.gz"
     }
   }
 }
@@ -173,7 +173,7 @@ echo -e "${GREEN}✓${NC} Created latest.json"
 echo ""
 echo "Updating cask sha256..."
 
-DMG_FILE=$(ls src-tauri/target/release/bundle/dmg/Grovr_*.dmg 2>/dev/null | head -1)
+DMG_FILE=$(ls src-tauri/target/release/bundle/dmg/DevTool_*.dmg 2>/dev/null | head -1)
 SHA256=$(shasum -a 256 "$DMG_FILE" | cut -d' ' -f1)
 sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" grovr.cask.rb
 

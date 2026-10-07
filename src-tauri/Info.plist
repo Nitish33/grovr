@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Grovr uses Terminal to run a worktree's start command in a new tab.</string>
+    <string>DevTool uses Terminal to run a worktree's start command in a new tab.</string>
 </dict>
 </plist>

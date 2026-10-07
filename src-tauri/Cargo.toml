@@ -1,7 +1,7 @@
 [package]
 name = "grovr"
 version = "0.7.3"
-description = "Grovr - Git Worktree Manager Desktop App"
+description = "DevTool - Git Worktree Manager Desktop App"
 authors = ["j1king"]
 edition = "2024"
 
@@ -10,7 +10,7 @@ name = "grovr_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "Grovr"
+name = "DevTool"
 path = "src/main.rs"
 
 [build-dependencies]

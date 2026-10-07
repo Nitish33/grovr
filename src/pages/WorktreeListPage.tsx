@@ -653,7 +653,7 @@ export function WorktreeListPage({
       <div data-tauri-drag-region className="titlebar">
         <div className="titlebar-spacer" />
         <span data-tauri-drag-region className="titlebar-title">
-          Grovr{import.meta.env.VITE_PREVIEW_WORKTREE && ` (${import.meta.env.VITE_PREVIEW_WORKTREE})`}
+          DevTool{import.meta.env.VITE_PREVIEW_WORKTREE && ` (${import.meta.env.VITE_PREVIEW_WORKTREE})`}
         </span>
         <div className="flex items-center gap-1 no-drag">
           <UpdateBadge updateInfo={updateInfo} onClick={onShowUpdate} />

@@ -2,8 +2,8 @@ cask "grovr" do
   version "0.7.3"
   sha256 "7f8fa4f49c8597a9aa598d129e89babd14b3361300c50c0e93a989de409deaed"
 
-  url "https://github.com/j1king/grovr/releases/download/v#{version}/Grovr_#{version}_aarch64.dmg"
-  name "Grovr"
+  url "https://github.com/j1king/grovr/releases/download/v#{version}/DevTool_#{version}_aarch64.dmg"
+  name "DevTool"
   desc "Desktop Git worktree manager"
   homepage "https://github.com/j1king/grovr"
 
@@ -11,7 +11,7 @@ cask "grovr" do
   depends_on arch: :arm64
   auto_updates true
 
-  app "Grovr.app"
+  app "DevTool.app"
 
   zap trash: [
     "~/Library/Application Support/com.grovr.desktop",

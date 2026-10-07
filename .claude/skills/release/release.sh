@@ -63,7 +63,7 @@ if [[ -n "$NOTES_FILE" ]]; then
   NOTES=$(cat "$NOTES_FILE")
 fi
 
-echo -e "${BLUE}=== Grovr Release ===${NC}"
+echo -e "${BLUE}=== DevTool Release ===${NC}"
 echo ""
 
 # Check 1: Last commit should be version bump
@@ -114,14 +114,14 @@ if git rev-parse "v$VERSION" >/dev/null 2>&1; then
 fi
 
 # Find artifacts
-DMG_FILE=$(ls src-tauri/target/release/bundle/dmg/Grovr_*.dmg 2>/dev/null | head -1)
-TAR_FILE="src-tauri/target/release/bundle/macos/Grovr.app.tar.gz"
+DMG_FILE=$(ls src-tauri/target/release/bundle/dmg/DevTool_*.dmg 2>/dev/null | head -1)
+TAR_FILE="src-tauri/target/release/bundle/macos/DevTool.app.tar.gz"
 LATEST_FILE="src-tauri/target/release/bundle/latest.json"
 
 echo ""
 echo "Artifacts to upload:"
 echo "  - $(basename "$DMG_FILE")"
-echo "  - Grovr.app.tar.gz"
+echo "  - DevTool.app.tar.gz"
 echo "  - latest.json"
 
 # If check mode, stop here

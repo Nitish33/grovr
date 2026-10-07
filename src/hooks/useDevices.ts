@@ -50,7 +50,7 @@ export function useDevices(platform: DevicePlatform) {
 
   const refresh = useCallback(() => setReloadKey((k) => k + 1), []);
 
-  // Keep running/stopped state fresh (devices can be started or stopped outside Grovr)
+  // Keep running/stopped state fresh (devices can be started or stopped outside DevTool)
   useEffect(() => {
     const list = platform === 'ios' ? api.listIosSimulators : api.listAndroidEmulators;
     let cancelled = false;
