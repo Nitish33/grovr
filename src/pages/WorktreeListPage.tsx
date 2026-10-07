@@ -58,6 +58,7 @@ import { AlertModal } from '@/components/ui/alert-modal';
 import xcodeIcon from '@/assets/ide-icons/xcode.svg';
 import androidStudioIcon from '@/assets/ide-icons/android-studio.svg';
 import { DevicesTab } from '@/components/DevicesTab';
+import { ToolsTab } from '@/components/ToolsTab';
 import { useNativeProjects } from '@/hooks/useNativeProjects';
 import { getIDEInfo } from '@/lib/ide-config';
 import * as api from '@/lib/api';
@@ -676,8 +677,10 @@ export function WorktreeListPage({
           id="main-tabpanel-tools"
           role="tabpanel"
           aria-labelledby="main-tab-tools"
-          className="flex-1"
-        />
+          className="flex-1 min-h-0 flex flex-col"
+        >
+          <ToolsTab />
+        </div>
       )}
 
       {activeTab === 'simulator' && (

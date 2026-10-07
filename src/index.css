@@ -121,6 +121,40 @@ html, body, #root {
   @apply outline-none ring-2 ring-ring;
 }
 
+/* Tools */
+.tool-row {
+  @apply flex items-center gap-3 px-3 py-1.5 rounded-md text-xs;
+}
+.tool-input {
+  @apply w-24 px-2 py-1 rounded-md font-mono text-xs outline-none;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.tool-input-wide { @apply w-48; }
+.tool-input::placeholder { color: hsl(var(--muted-foreground)); }
+.tool-input:focus-visible { @apply ring-2 ring-ring; }
+.tool-input-invalid { border-color: hsl(var(--destructive)); }
+.tool-result {
+  @apply flex items-center gap-1.5 px-2 py-1 rounded-md font-mono text-xs transition-colors;
+  color: hsl(var(--muted-foreground));
+}
+.tool-result:not(:disabled) { color: hsl(var(--foreground)); @apply cursor-pointer; }
+.tool-result:not(:disabled):hover { background: hsl(var(--secondary)); }
+.tool-result:focus-visible { @apply outline-none ring-2 ring-ring; }
+
+.tool-label {
+  @apply text-xs;
+  color: hsl(var(--muted-foreground));
+}
+.tool-chip {
+  @apply flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors cursor-pointer;
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+.tool-chip:hover { background: hsl(var(--secondary) / 0.7); }
+.tool-chip:focus-visible { @apply outline-none ring-2 ring-ring; }
+
 /* Devices (simulators / emulators) */
 .devices-toolbar {
   @apply flex items-center justify-between px-3 pb-1 flex-shrink-0;
