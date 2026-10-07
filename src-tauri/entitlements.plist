@@ -18,6 +18,10 @@
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
 
+    <!-- Run start commands in Terminal.app via AppleScript -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
     <!-- Keychain access for secure token storage -->
     <key>com.apple.security.keychain-access-groups</key>
     <array>

@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Folder,
   Terminal,
+  Play,
   GitBranchPlus,
   Pencil,
   ExternalLink,
@@ -1031,7 +1032,7 @@ function ProjectCard({
               showDescription ? 'minmax(0, 1fr)' : null,
               showGitHub ? '80px' : null,
               showJira ? '80px' : null,
-              '140px',
+              '168px',
             ].filter(Boolean).join(' '),
           }}
         >
@@ -1245,6 +1246,19 @@ function WorktreeRow({
 
       {/* Actions */}
       <div className="worktree-col-actions">
+        <button
+          className={`worktree-action worktree-quick-action ${native.start_command ? '' : 'worktree-quick-action-disabled'}`}
+          title={native.start_command ? `Run ${native.start_command} in Terminal` : 'Add start in your package.json to run'}
+          aria-label={native.start_command ? `Run ${native.start_command}` : 'Add start in your package.json to run'}
+          aria-disabled={!native.start_command}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!native.start_command) return;
+            void openNative(() => api.runStartCommand(worktree.path), 'start command');
+          }}
+        >
+          <Play size={14} />
+        </button>
         {native.ios_project && (
           <button
             className="worktree-action worktree-quick-action"

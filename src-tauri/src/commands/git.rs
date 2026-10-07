@@ -614,6 +614,8 @@ pub struct NativeProjects {
     pub ios_project: Option<String>,
     /// `<path>/android` when it looks like a Gradle project.
     pub android_dir: Option<String>,
+    /// e.g. "pnpm start", when `<path>/package.json` defines a `start` script.
+    pub start_command: Option<String>,
 }
 
 fn detect_ios_project(root: &Path) -> Option<String> {
@@ -650,12 +652,38 @@ fn detect_android_dir(root: &Path) -> Option<String> {
     is_gradle.then(|| dir.to_string_lossy().to_string())
 }
 
+fn detect_start_command(root: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(root.join("package.json")).ok()?;
+    let package: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let has_start = package
+        .get("scripts")
+        .and_then(|scripts| scripts.get("start"))
+        .and_then(|start| start.as_str())
+        .is_some_and(|start| !start.trim().is_empty());
+    if !has_start {
+        return None;
+    }
+
+    let has = |file: &str| root.join(file).is_file();
+    let command = if has("pnpm-lock.yaml") {
+        "pnpm start"
+    } else if has("yarn.lock") {
+        "yarn start"
+    } else if has("bun.lockb") || has("bun.lock") {
+        "bun run start"
+    } else {
+        "npm start"
+    };
+    Some(command.to_string())
+}
+
 #[tauri::command]
 pub fn detect_native_projects(path: String) -> Result<NativeProjects, String> {
     let root = Path::new(&path);
     Ok(NativeProjects {
         ios_project: if cfg!(target_os = "macos") { detect_ios_project(root) } else { None },
         android_dir: detect_android_dir(root),
+        start_command: detect_start_command(root),
     })
 }
 
@@ -705,6 +733,74 @@ pub fn open_android_studio(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open Android Studio ({}): {}", launcher, e))?;
         Ok(())
+    }
+}
+
+fn sh_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn applescript_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Runs the worktree's `start` script in a new Terminal.app tab.
+/// The command is derived here from package.json, never taken from the frontend.
+#[tauri::command]
+pub async fn run_start_command(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        tokio::task::spawn_blocking(move || {
+            let start = detect_start_command(Path::new(&path))
+                .ok_or("No start script found in package.json")?;
+            let shell_cmd = applescript_escape(&format!("cd {} && {}", sh_quote(&path), start));
+
+            // A new tab needs Cmd+T via System Events (requires Accessibility permission).
+            // `do script ... in front window` alone would reuse the current, possibly busy, tab.
+            let new_tab = format!(
+                r#"tell application "Terminal"
+  activate
+  delay 0.3
+  if (count of windows) is 0 then
+    do script "{cmd}"
+  else
+    tell application "System Events" to keystroke "t" using command down
+    delay 0.4
+    do script "{cmd}" in front window
+  end if
+end tell"#,
+                cmd = shell_cmd
+            );
+            let output = Command::new("osascript")
+                .args(["-e", &new_tab])
+                .output()
+                .map_err(|e| format!("Failed to run osascript: {}", e))?;
+            if output.status.success() {
+                return Ok(());
+            }
+
+            // Not permitted to send keystrokes: fall back to a new Terminal window
+            let new_window = format!(
+                "tell application \"Terminal\"\n  activate\n  do script \"{}\"\nend tell",
+                shell_cmd
+            );
+            let output = Command::new("osascript")
+                .args(["-e", &new_window])
+                .output()
+                .map_err(|e| format!("Failed to run osascript: {}", e))?;
+            if !output.status.success() {
+                return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Err("Running in a terminal tab is only supported on macOS".to_string())
     }
 }
 

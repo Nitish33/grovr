@@ -266,6 +266,7 @@ export async function openTerminal(path: string): Promise<void> {
 export interface NativeProjects {
   ios_project: string | null;
   android_dir: string | null;
+  start_command: string | null;
 }
 
 export async function detectNativeProjects(path: string): Promise<NativeProjects> {
@@ -274,6 +275,10 @@ export async function detectNativeProjects(path: string): Promise<NativeProjects
 
 export async function openXcode(path: string): Promise<void> {
   return invoke('open_xcode', { path });
+}
+
+export async function runStartCommand(path: string): Promise<void> {
+  return invoke('run_start_command', { path });
 }
 
 export async function openAndroidStudio(path: string): Promise<void> {
