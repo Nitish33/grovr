@@ -103,6 +103,66 @@ pub struct QuickLinkItem {
     pub pinned: bool,
 }
 
+/// Options for the simulator/emulator quick bar (screenshots and screen recordings)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct QuickBarSettings {
+    /// Re-encode simulator recordings to a smaller file after stopping (needs ffmpeg)
+    #[serde(default = "default_true")]
+    pub shrink_recordings: bool,
+    /// x264/x265 quality: lower is better quality and a bigger file (18-36)
+    #[serde(default = "default_video_crf")]
+    pub video_crf: u32,
+    /// Frames per second of the shrunk video; 0 keeps the original rate
+    #[serde(default = "default_video_fps")]
+    pub video_fps: u32,
+    /// Shrunk videos are scaled down to at most this width; 0 keeps the original size
+    #[serde(default)]
+    pub video_max_width: u32,
+    /// "h264" (plays everywhere) or "hevc" (smaller, but not supported everywhere)
+    #[serde(default = "default_video_codec")]
+    pub video_codec: String,
+    /// Recordings older than this many hours are deleted when a new one starts; 0 keeps them
+    #[serde(default = "default_keep_hours")]
+    pub recording_keep_hours: u32,
+    /// Also save screenshots to the Desktop (they are always copied to the clipboard)
+    #[serde(default)]
+    pub screenshot_save_to_desktop: bool,
+}
+
+impl Default for QuickBarSettings {
+    fn default() -> Self {
+        QuickBarSettings {
+            shrink_recordings: true,
+            video_crf: default_video_crf(),
+            video_fps: default_video_fps(),
+            video_max_width: 0,
+            video_codec: default_video_codec(),
+            recording_keep_hours: default_keep_hours(),
+            screenshot_save_to_desktop: false,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_video_crf() -> u32 {
+    28
+}
+
+fn default_video_fps() -> u32 {
+    30
+}
+
+fn default_video_codec() -> String {
+    "h264".to_string()
+}
+
+fn default_keep_hours() -> u32 {
+    24
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct AppSettings {
     #[serde(default)]
@@ -149,6 +209,9 @@ pub struct AppSettings {
     /// Quick links (pinned first, then by user order)
     #[serde(default)]
     pub quick_links: Vec<QuickLinkItem>,
+    /// Quick bar (screenshot / recording) options
+    #[serde(default)]
+    pub quick_bar: QuickBarSettings,
 }
 
 fn default_theme() -> String {

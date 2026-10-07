@@ -2,8 +2,35 @@
 //! window and follows it around. macOS only: window positions come from CoreGraphics.
 
 use super::devices::{adb_binary, running_avds};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::Mutex;
+
+const DOCK_WIDTH: f64 = 48.0;
+const DOCK_HEIGHT: f64 = 292.0;
+/// Size and lifetime of the toast shown over the centre of the device window
+const TOAST_WIDTH: f64 = 320.0;
+const TOAST_HEIGHT: f64 = 48.0;
+/// The "recording" pill shown near the top of the device window while recording
+const INDICATOR_WIDTH: f64 = 116.0;
+const INDICATOR_HEIGHT: f64 = 34.0;
+const INDICATOR_TOP_MARGIN: f64 = 14.0;
+const TOAST_MILLIS: u64 = 1600;
+/// A toast that stays until another replaces it (e.g. "Processing…"), with a safety limit
+const STICKY_TOAST_MILLIS: u64 = 120_000;
+
+/// Shared by the quick bars: where each one's device window is, and its current toast.
+#[derive(Default)]
+pub struct DockState {
+    /// Latest device window rect (x, y, width, height; CoreGraphics coordinates) per bar label
+    device_rects: Mutex<HashMap<String, (f64, f64, f64, f64)>>,
+    /// The toast window currently shown for each bar
+    toasts: Mutex<HashMap<String, String>>,
+}
+
+static TOAST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn dock_label(platform: &str, device_id: &str) -> String {
     let id: String = device_id
@@ -56,8 +83,6 @@ mod follow {
     use std::time::{Duration, Instant};
     use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-    const DOCK_WIDTH: f64 = 48.0;
-    const DOCK_HEIGHT: f64 = 232.0;
     const GAP: f64 = 6.0;
     const POLL: Duration = Duration::from_millis(40);
     const PROCESS_SCAN_EVERY: Duration = Duration::from_secs(2);
@@ -65,6 +90,8 @@ mod follow {
     const GONE_GRACE: Duration = Duration::from_secs(3);
     /// Smaller windows are toolbars, menu-bar strips and the like, not the device screen
     const MIN_DEVICE_WINDOW: f64 = 150.0;
+    /// While the bar isn't on screen, how often to try ordering it above the device again
+    const ORDER_RETRY: Duration = Duration::from_millis(500);
 
     #[derive(Debug, Clone)]
     struct WinInfo {
@@ -223,7 +250,8 @@ mod follow {
             .decorations(false)
             .transparent(true)
             .shadow(false)
-            .always_on_top(true)
+            // Not "always on top": the bar is kept just above its device window instead (see
+            // run_follow_loop), so windows opened from it (logs, settings) can sit above the bar
             .skip_taskbar(true)
             .resizable(false)
             .focused(false)
@@ -313,6 +341,213 @@ mod follow {
         });
     }
 
+    /// Moves a window so its top-left corner is at (x, y) in CoreGraphics coordinates.
+    fn place_top_left(window: &tauri::WebviewWindow, x: f64, y: f64) {
+        let target = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            use cocoa::foundation::{NSPoint, NSRect};
+            use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+
+            unsafe {
+                let screens: *mut Object = msg_send![class!(NSScreen), screens];
+                let count: usize = msg_send![screens, count];
+                if count == 0 {
+                    return;
+                }
+                let primary: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+                let primary_frame: NSRect = msg_send![primary, frame];
+                if let Ok(ptr) = target.ns_window() {
+                    let ns_window = ptr as *mut Object;
+                    if !ns_window.is_null() {
+                        let _: () = msg_send![ns_window, setFrameTopLeftPoint: NSPoint::new(x, primary_frame.size.height - y)];
+                    }
+                }
+            }
+        });
+    }
+
+    /// Shows a short message over the centre of the device window the calling bar is docked to.
+    /// The toast is click-through and closes itself.
+    pub fn show_toast(bar: &tauri::WebviewWindow, message: &str, kind: &str, sticky: bool) -> Result<(), String> {
+        let app = bar.app_handle().clone();
+        let bar_label = bar.label().to_string();
+        let state = app.state::<DockState>();
+
+        let rect = state
+            .device_rects
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(&bar_label)
+            .copied();
+        let Some((dx, dy, dw, dh)) = rect else {
+            return Ok(());
+        };
+
+        let label = format!("dock-toast-{}", TOAST_COUNTER.fetch_add(1, AtomicOrdering::Relaxed));
+        let previous = state
+            .toasts
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(bar_label, label.clone());
+        if let Some(window) = previous.and_then(|l| app.get_webview_window(&l)) {
+            let _ = window.close();
+        }
+
+        let width = TOAST_WIDTH.min((dw - 24.0).max(120.0));
+        let url = format!(
+            "index.html?view=toast&kind={}&message={}",
+            percent_encode(kind),
+            percent_encode(message)
+        );
+        let toast = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+            .title("Quick bar")
+            .inner_size(width, TOAST_HEIGHT)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(false)
+            .visible(false)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        toast.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
+        place_top_left(&toast, dx + dw / 2.0 - width / 2.0, dy + dh / 2.0 - TOAST_HEIGHT / 2.0);
+        toast.show().map_err(|e| e.to_string())?;
+
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(if sticky { STICKY_TOAST_MILLIS } else { TOAST_MILLIS }));
+            let _ = toast.close();
+        });
+        Ok(())
+    }
+
+    /// Puts `target` immediately to the right of `anchor` (top edges aligned), kept inside the
+    /// visible area of the display the anchor is on. Works in AppKit coordinates throughout, so it
+    /// is right on any display arrangement.
+    pub fn place_beside(target: &tauri::WebviewWindow, anchor: &tauri::WebviewWindow) {
+        let (target, anchor) = (target.clone(), anchor.clone());
+        let handle = target.clone();
+        let _ = handle.run_on_main_thread(move || {
+            use cocoa::foundation::{NSPoint, NSRect};
+            use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+
+            let (Ok(target_ptr), Ok(anchor_ptr)) = (target.ns_window(), anchor.ns_window()) else {
+                return;
+            };
+            let (target_ns, anchor_ns) = (target_ptr as *mut Object, anchor_ptr as *mut Object);
+            if target_ns.is_null() || anchor_ns.is_null() {
+                return;
+            }
+
+            unsafe {
+                let anchor_frame: NSRect = msg_send![anchor_ns, frame];
+                let target_frame: NSRect = msg_send![target_ns, frame];
+
+                // Visible area (no menu bar / Dock) of the display the anchor is on
+                let screens: *mut Object = msg_send![class!(NSScreen), screens];
+                let count: usize = msg_send![screens, count];
+                if count == 0 {
+                    return;
+                }
+                let center_x = anchor_frame.origin.x + anchor_frame.size.width / 2.0;
+                let center_y = anchor_frame.origin.y + anchor_frame.size.height / 2.0;
+                let first: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+                let mut visible: NSRect = msg_send![first, visibleFrame];
+                for i in 0..count {
+                    let screen: *mut Object = msg_send![screens, objectAtIndex: i];
+                    let frame: NSRect = msg_send![screen, frame];
+                    if center_x >= frame.origin.x
+                        && center_x < frame.origin.x + frame.size.width
+                        && center_y >= frame.origin.y
+                        && center_y < frame.origin.y + frame.size.height
+                    {
+                        visible = msg_send![screen, visibleFrame];
+                        break;
+                    }
+                }
+
+                // Right of the anchor, then pulled back inside the visible area
+                let max_x = visible.origin.x + visible.size.width - target_frame.size.width;
+                let x = (anchor_frame.origin.x + anchor_frame.size.width + GAP).min(max_x).max(visible.origin.x);
+                let top = (anchor_frame.origin.y + anchor_frame.size.height)
+                    .min(visible.origin.y + visible.size.height)
+                    .max(visible.origin.y + target_frame.size.height);
+
+                let _: () = msg_send![target_ns, setFrameTopLeftPoint: NSPoint::new(x, top)];
+            }
+        });
+    }
+
+    /// Shows `window` (without activating the app) directly above the window with this number,
+    /// which may belong to another app. Done through AppKit's relative ordering.
+    fn order_above(window: &tauri::WebviewWindow, other_number: i64) {
+        let target = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            use objc::{msg_send, runtime::Object, sel, sel_impl};
+
+            if let Ok(ptr) = target.ns_window() {
+                let ns_window = ptr as *mut Object;
+                if !ns_window.is_null() {
+                    const NS_WINDOW_ABOVE: i64 = 1;
+                    let _: () = unsafe { msg_send![ns_window, orderWindow: NS_WINDOW_ABOVE relativeTo: other_number] };
+                }
+            }
+        });
+    }
+
+    fn indicator_label(bar_label: &str) -> String {
+        format!("dock-rec-{}", bar_label)
+    }
+
+    /// Shows the "recording" pill near the top of the device window the calling bar is docked to.
+    pub fn show_indicator(bar: &tauri::WebviewWindow, started_at: u64) -> Result<(), String> {
+        let app = bar.app_handle().clone();
+        let label = indicator_label(bar.label());
+        if app.get_webview_window(&label).is_some() {
+            return Ok(());
+        }
+
+        let rect = app
+            .state::<DockState>()
+            .device_rects
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(bar.label())
+            .copied();
+        let Some((dx, dy, dw, _)) = rect else {
+            return Ok(());
+        };
+
+        let url = format!("index.html?view=recording&start={}", started_at);
+        let indicator = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+            .title("Recording")
+            .inner_size(INDICATOR_WIDTH, INDICATOR_HEIGHT)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(false)
+            .visible(false)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        indicator.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
+        place_top_left(&indicator, dx + dw / 2.0 - INDICATOR_WIDTH / 2.0, dy + INDICATOR_TOP_MARGIN);
+        indicator.show().map_err(|e| e.to_string())
+    }
+
+    pub fn hide_indicator(bar: &tauri::WebviewWindow) {
+        let app = bar.app_handle();
+        if let Some(window) = app.get_webview_window(&indicator_label(bar.label())) {
+            let _ = window.close();
+        }
+    }
+
     fn ns_window_number(window: &tauri::WebviewWindow) -> Option<i64> {
         use objc::{msg_send, runtime::Object, sel, sel_impl};
         let ptr = window.ns_window().ok()? as *mut Object;
@@ -330,12 +565,12 @@ mod follow {
         device_name: String,
         own_number: Option<i64>,
     ) {
-        let own_pid = std::process::id() as i32;
         let mut avd_pids: Vec<i32> = Vec::new();
         let mut last_scan: Option<Instant> = None;
         let mut gone_since: Option<Instant> = None;
         let mut shown = false;
         let mut last_pos: Option<(f64, f64, f64)> = None;
+        let mut last_order: Option<Instant> = None;
 
         while !stop.load(Ordering::Relaxed) {
             std::thread::sleep(POLL);
@@ -352,6 +587,9 @@ mod follow {
                 // Minimised or on another desktop: hide, but only close once it's really gone
                 if shown {
                     let _ = window.hide();
+                    if let Some(indicator) = window.app_handle().get_webview_window(&indicator_label(window.label())) {
+                        let _ = indicator.hide();
+                    }
                     shown = false;
                     debug("device window not on screen: bar hidden");
                 }
@@ -364,35 +602,129 @@ mod follow {
                     if since.elapsed() >= GONE_GRACE {
                         debug("device window is gone: closing the bar");
                         let _ = window.close();
-                        return;
+                        break;
                     }
                 }
                 continue;
             };
             gone_since = None;
 
-            // Only float above the device while the device (or this app) is the front-most;
-            // otherwise the bar would sit on top of unrelated apps
-            let front = on_screen
-                .iter()
-                .find(|w| is_device_sized(w) && Some(w.number) != own_number);
-            let visible = front.is_some_and(|w| w.pid == device.pid || w.pid == own_pid);
-
             if last_pos != Some((device.x, device.y, right)) {
                 place(&window, &device, right);
                 last_pos = Some((device.x, device.y, right));
+                if let Ok(mut rects) = window.app_handle().state::<DockState>().device_rects.lock() {
+                    rects.insert(window.label().to_string(), (device.x, device.y, device.w, device.h));
+                }
+                if let Some(indicator) = window.app_handle().get_webview_window(&indicator_label(window.label())) {
+                    place_top_left(
+                        &indicator,
+                        device.x + device.w / 2.0 - INDICATOR_WIDTH / 2.0,
+                        device.y + INDICATOR_TOP_MARGIN,
+                    );
+                }
                 debug(&format!(
                     "device window #{} '{}' at ({}, {}) {}x{}, bar anchored at right edge {}",
                     device.number, device.name, device.x, device.y, device.w, device.h, right
                 ));
             }
-            if visible != shown {
-                let _ = if visible { window.show() } else { window.hide() };
-                shown = visible;
-                debug(&format!("bar {}", if visible { "shown" } else { "hidden (another app is in front)" }));
+
+            // Keep the bar directly above the device window: when the device is raised (clicked)
+            // it ends up above the bar, so put the bar back. Anything else stacked above the
+            // device, such as a logs window opened from the bar, stays above the bar too.
+            let index_of = |number: i64| on_screen.iter().position(|w| w.number == number);
+            let bar_index = own_number.and_then(index_of);
+            let device_index = index_of(device.number);
+            let behind_device = matches!((bar_index, device_index), (Some(bar), Some(dev)) if bar > dev);
+            let not_on_screen = bar_index.is_none();
+            let retry_due = last_order.map_or(true, |t| t.elapsed() >= ORDER_RETRY);
+
+            if behind_device || (not_on_screen && retry_due) {
+                last_order = Some(Instant::now());
+                if own_number.is_some() {
+                    order_above(&window, device.number);
+                } else {
+                    let _ = window.show();
+                }
+                if !shown {
+                    if let Some(indicator) = window.app_handle().get_webview_window(&indicator_label(window.label())) {
+                        let _ = indicator.show();
+                    }
+                    shown = true;
+                    debug("bar shown above the device window");
+                }
             }
         }
+
+        if let Ok(mut rects) = window.app_handle().state::<DockState>().device_rects.lock() {
+            rects.remove(window.label());
+        }
+        hide_indicator(&window);
     }
+}
+
+/// Moves `target` to just right of the quick bar `bar`, if `bar` is one. No-op elsewhere.
+pub fn place_beside_bar(target: &tauri::WebviewWindow, bar: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    if bar.label().starts_with("dock-") {
+        follow::place_beside(target, bar);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (target, bar);
+}
+
+/// Shows a toast over the centre of the device the calling quick bar is docked to.
+/// `kind` is "ok", "error" or "busy" (a spinner).
+#[tauri::command]
+pub async fn show_device_toast(
+    window: tauri::WebviewWindow,
+    message: String,
+    kind: String,
+    sticky: Option<bool>,
+) -> Result<(), String> {
+    if !window.label().starts_with("dock-") {
+        return Err("Not a quick bar window".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        follow::show_toast(&window, &message, &kind, sticky.unwrap_or(false))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (message, kind, sticky);
+        Ok(())
+    }
+}
+
+/// Shows the "recording" timer pill on the device the calling quick bar is docked to.
+#[tauri::command]
+pub async fn show_recording_indicator(window: tauri::WebviewWindow, started_at: u64) -> Result<(), String> {
+    if !window.label().starts_with("dock-") {
+        return Err("Not a quick bar window".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        follow::show_indicator(&window, started_at)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = started_at;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub async fn hide_recording_indicator(window: tauri::WebviewWindow) -> Result<(), String> {
+    if !window.label().starts_with("dock-") {
+        return Err("Not a quick bar window".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        follow::hide_indicator(&window);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -443,8 +775,8 @@ fn adb(serial: &str, args: &[&str], what: &str) -> Result<Vec<u8>, String> {
     run(Command::new(adb_binary()).args(["-s", serial]).args(args), what)
 }
 
-fn screenshot_path(device_id: &str) -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("Could not find the home folder")?;
+/// A new file in the temp folder for a screenshot on its way to the clipboard.
+fn screenshot_temp_path(device_id: &str) -> Result<PathBuf, String> {
     let name: String = device_id
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
@@ -453,7 +785,49 @@ fn screenshot_path(device_id: &str) -> Result<PathBuf, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    Ok(home.join("Desktop").join(format!("{}-{}.png", name, millis)))
+    let dir = std::env::temp_dir().join("grovr-screenshots");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create a temp folder: {}", e))?;
+    Ok(dir.join(format!("{}-{}.png", name, millis)))
+}
+
+/// Puts a PNG file on the clipboard as an image, so it can be pasted into chats, issues, etc.
+/// Done by `osascript` rather than in-process: NSPasteboard must not be touched from a worker
+/// thread (see clipboard.rs), and this needs no image-decoding dependency.
+fn copy_png_to_clipboard(path: &std::path::Path) -> Result<(), String> {
+    if !cfg!(target_os = "macos") {
+        return Err("Copying a screenshot is only available on macOS".to_string());
+    }
+    run(
+        Command::new("osascript")
+            .args([
+                "-e",
+                "on run argv",
+                "-e",
+                "set the clipboard to (read (POSIX file (item 1 of argv)) as \u{ab}class PNGf\u{bb})",
+                "-e",
+                "end run",
+            ])
+            .arg(path),
+        "copy the screenshot to the clipboard",
+    )?;
+    Ok(())
+}
+
+fn app_settings_save_to_desktop(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    app.state::<super::settings::SettingsState>()
+        .0
+        .lock()
+        .map(|settings| settings.quick_bar.screenshot_save_to_desktop)
+        .unwrap_or(false)
+}
+
+/// Best effort: a failure here shouldn't stop the screenshot reaching the clipboard.
+fn save_screenshot_to_desktop(screenshot: &std::path::Path) {
+    let (Some(home), Some(name)) = (std::env::var_os("HOME"), screenshot.file_name()) else {
+        return;
+    };
+    let _ = std::fs::copy(screenshot, PathBuf::from(home).join("Desktop").join(name));
 }
 
 /// Only plain URLs / deep links: a scheme, no whitespace or control characters.
@@ -470,9 +844,10 @@ fn valid_link(url: &str) -> bool {
 }
 
 /// Runs one quick action on a running device. Returns a short result for the UI:
-/// the saved file path for `screenshot`, the new mode for `toggle_appearance`.
+/// the new mode for `toggle_appearance`.
 #[tauri::command]
 pub async fn device_quick_action(
+    app: tauri::AppHandle,
     platform: String,
     device_id: String,
     action: String,
@@ -484,16 +859,25 @@ pub async fn device_quick_action(
         let ios = platform == "ios";
         match action.as_str() {
             "screenshot" => {
-                let path = screenshot_path(&device_id)?;
+                let path = screenshot_temp_path(&device_id)?;
                 let path_str = path.to_string_lossy().to_string();
-                if ios {
-                    simctl(&["io", &device_id, "screenshot", &path_str], "take a screenshot")?;
-                } else {
-                    let serial = android_serial(&device_id)?;
-                    let png = adb(&serial, &["exec-out", "screencap", "-p"], "take a screenshot")?;
-                    std::fs::write(&path, png).map_err(|e| format!("Failed to save the screenshot: {}", e))?;
-                }
-                Ok(Some(path_str))
+                let result = (|| {
+                    if ios {
+                        simctl(&["io", &device_id, "screenshot", &path_str], "take a screenshot")?;
+                    } else {
+                        let serial = android_serial(&device_id)?;
+                        let png = adb(&serial, &["exec-out", "screencap", "-p"], "take a screenshot")?;
+                        std::fs::write(&path, png).map_err(|e| format!("Failed to save the screenshot: {}", e))?;
+                    }
+                    if app_settings_save_to_desktop(&app) {
+                        save_screenshot_to_desktop(&path);
+                    }
+                    copy_png_to_clipboard(&path)
+                })();
+                // The clipboard holds its own copy of the image
+                let _ = std::fs::remove_file(&path);
+                result?;
+                Ok(None)
             }
             "toggle_appearance" => {
                 if ios {

@@ -16,11 +16,18 @@ use commands::settings::{
     set_fetch_before_create, set_global_shortcut, set_ide, set_last_used_project,
     set_launch_at_startup, set_onboarding_completed, set_refresh_interval_minutes,
     set_skip_open_ide_confirm, set_theme, set_worktree_memo, set_pinned_devices,
-    set_device_note, set_notes, set_quick_links,
+    set_device_note, set_notes, set_quick_links, set_quick_bar_settings,
 };
 use commands::links::open_link;
-use commands::windows::open_json_viewer;
-use commands::dock::{toggle_device_dock, device_quick_action};
+use commands::windows::{open_json_viewer, open_quick_bar_settings};
+use commands::recording::{
+    start_device_recording, stop_device_recording, device_recording_started_at, list_recordings,
+    delete_recording, delete_all_recordings, open_recording, reveal_recording, ffmpeg_location,
+};
+use commands::dock::{
+    toggle_device_dock, device_quick_action, show_device_toast, show_recording_indicator,
+    hide_recording_indicator,
+};
 use commands::logs::{open_log_window, start_log_stream, save_log_snapshot, list_android_processes, list_user_apps};
 use commands::devices::{
     list_ios_simulators, list_android_emulators, launch_ios_simulator, launch_android_emulator,
@@ -74,9 +81,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(
             tauri_plugin_window_state::Builder::new()
-                // The quick bars are positioned by the app beside a device window; restoring a
-                // saved position (or visibility) would fight that
-                .with_filter(|label| !label.starts_with("dock-"))
+                // The quick bars are positioned by the app beside a device window, and their settings
+                // window opens beside the bar; restoring a saved position (or visibility) would fight that
+                .with_filter(|label| !label.starts_with("dock-") && label != "quickbar-settings")
                 .build(),
         )
         .plugin(tauri_plugin_liquid_glass::init())
@@ -110,6 +117,10 @@ pub fn run() {
 
             app.manage(settings_state);
             app.manage(commands::logs::LogStreams::default());
+            app.manage(commands::dock::DockState::default());
+            app.manage(commands::recording::Recordings::default());
+            // A previous run may have been killed mid-recording
+            std::thread::spawn(commands::recording::stop_orphans);
 
             // Apply window effects
             setup_window_effects(app)?;
@@ -137,6 +148,7 @@ pub fn run() {
             set_device_note,
             set_notes,
             set_quick_links,
+            set_quick_bar_settings,
             // Projects
             get_projects,
             add_project,
@@ -191,9 +203,22 @@ pub fn run() {
             open_link,
             // Windows
             open_json_viewer,
+            open_quick_bar_settings,
             open_log_window,
             toggle_device_dock,
             device_quick_action,
+            show_device_toast,
+            show_recording_indicator,
+            hide_recording_indicator,
+            start_device_recording,
+            stop_device_recording,
+            device_recording_started_at,
+            list_recordings,
+            delete_recording,
+            delete_all_recordings,
+            open_recording,
+            reveal_recording,
+            ffmpeg_location,
             get_worktree_git_status,
             start_log_stream,
             save_log_snapshot,
@@ -205,6 +230,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                commands::recording::stop_all(app_handle);
+            }
+
             // macOS: Show window when dock icon is clicked (Reopen event)
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {

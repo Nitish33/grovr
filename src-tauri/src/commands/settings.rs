@@ -1,4 +1,4 @@
-use crate::types::{AppSettings, IdeConfig, NoteItem, QuickLinkItem, WorktreeMemo};
+use crate::types::{AppSettings, IdeConfig, NoteItem, QuickBarSettings, QuickLinkItem, WorktreeMemo};
 use tauri::{Manager, State};
 #[cfg(not(target_os = "macos"))]
 use tauri_plugin_autostart::ManagerExt;
@@ -345,5 +345,27 @@ pub fn set_global_shortcut(
     // 3. Save settings
     let mut settings = state.0.lock().map_err(|e| e.to_string())?;
     settings.global_shortcut = shortcut;
+    save_settings(&app, &settings)
+}
+
+const ALLOWED_FPS: [u32; 5] = [0, 15, 24, 30, 60];
+
+#[tauri::command]
+pub fn set_quick_bar_settings(
+    app: tauri::AppHandle,
+    state: State<SettingsState>,
+    quick_bar: QuickBarSettings,
+) -> Result<(), String> {
+    let cleaned = QuickBarSettings {
+        video_crf: quick_bar.video_crf.clamp(18, 36),
+        video_fps: if ALLOWED_FPS.contains(&quick_bar.video_fps) { quick_bar.video_fps } else { 30 },
+        video_max_width: quick_bar.video_max_width.min(4096),
+        video_codec: if quick_bar.video_codec == "hevc" { "hevc".to_string() } else { "h264".to_string() },
+        recording_keep_hours: quick_bar.recording_keep_hours.min(24 * 365),
+        ..quick_bar
+    };
+
+    let mut settings = state.0.lock().map_err(|e| e.to_string())?;
+    settings.quick_bar = cleaned;
     save_settings(&app, &settings)
 }

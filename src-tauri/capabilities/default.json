@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "json-viewer", "logs-*", "dock-*"],
+  "windows": ["main", "json-viewer", "logs-*", "dock-*", "quickbar-settings"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

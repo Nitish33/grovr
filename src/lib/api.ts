@@ -63,6 +63,21 @@ export interface QuickLink {
   pinned: boolean;
 }
 
+/** Options for the simulator/emulator quick bar (see src-tauri/src/types.rs) */
+export interface QuickBarSettings {
+  shrink_recordings: boolean;
+  /** Lower is better quality and a bigger file (18-36) */
+  video_crf: number;
+  /** 0 keeps the original frame rate */
+  video_fps: number;
+  /** 0 keeps the original width */
+  video_max_width: number;
+  video_codec: 'h264' | 'hevc';
+  /** Recordings older than this many hours are deleted when a new one starts; 0 keeps them */
+  recording_keep_hours: number;
+  screenshot_save_to_desktop: boolean;
+}
+
 export interface BackendAppSettings {
   ide?: BackendIdeConfig;
   theme: string;
@@ -83,6 +98,7 @@ export interface BackendAppSettings {
   device_notes?: Record<string, string>;
   notes?: Note[];
   quick_links?: QuickLink[];
+  quick_bar?: QuickBarSettings;
 }
 
 // ============ Devices API ============
@@ -158,6 +174,47 @@ export async function toggleDeviceDock(platform: DevicePlatform, deviceId: strin
   return invoke('toggle_device_dock', { platform, deviceId, deviceName });
 }
 
+export type ToastKind = 'ok' | 'error' | 'busy';
+
+/**
+ * Shows a toast over the centre of the device the calling quick bar is docked to. It closes
+ * itself, unless `sticky` (then it stays until the next toast replaces it). `busy` shows a spinner.
+ */
+export async function showDeviceToast(message: string, kind: ToastKind = 'ok', sticky = false): Promise<void> {
+  return invoke('show_device_toast', { message, kind, sticky });
+}
+
+/** Shows a "recording" timer pill near the top of the device the calling quick bar is docked to. */
+export async function showRecordingIndicator(startedAt: number): Promise<void> {
+  return invoke('show_recording_indicator', { startedAt });
+}
+
+export async function hideRecordingIndicator(): Promise<void> {
+  return invoke('hide_recording_indicator');
+}
+
+/** Starts recording; resolves with when it started (ms since the Unix epoch). */
+export async function startDeviceRecording(platform: DevicePlatform, deviceId: string): Promise<number> {
+  return invoke('start_device_recording', { platform, deviceId });
+}
+
+/** When the device's recording started (ms since the Unix epoch), or null if it isn't recording. */
+export async function deviceRecordingStartedAt(platform: DevicePlatform, deviceId: string): Promise<number | null> {
+  return invoke('device_recording_started_at', { platform, deviceId });
+}
+
+export interface FinishedRecording {
+  path: string;
+  /** Size as recorded, and after shrinking (equal when it wasn't shrunk) */
+  original_bytes: number;
+  final_bytes: number;
+}
+
+/** Stops the recording and resolves with the finished video file's path and sizes. */
+export async function stopDeviceRecording(platform: DevicePlatform, deviceId: string): Promise<FinishedRecording> {
+  return invoke('stop_device_recording', { platform, deviceId });
+}
+
 export type DeviceQuickAction = 'screenshot' | 'toggle_appearance' | 'open_url' | 'shutdown';
 
 /** Runs a quick action; returns a short result (screenshot path, new appearance) when there is one. */
@@ -168,6 +225,52 @@ export async function deviceQuickAction(
   payload?: string
 ): Promise<string | null> {
   return invoke('device_quick_action', { platform, deviceId, action, payload });
+}
+
+export async function setQuickBarSettings(quickBar: QuickBarSettings): Promise<void> {
+  return invoke('set_quick_bar_settings', { quickBar });
+}
+
+/** Opens the quick bar settings window (screenshot / recording options, saved recordings). */
+export async function openQuickBarSettings(): Promise<void> {
+  return invoke('open_quick_bar_settings');
+}
+
+export interface RecordingFile {
+  name: string;
+  path: string;
+  size: number;
+  /** Last modified, ms since the Unix epoch */
+  modified_ms: number;
+  /** Still being recorded: can't be deleted yet */
+  in_progress: boolean;
+}
+
+/** Saved recordings, newest first. */
+export async function listRecordings(): Promise<RecordingFile[]> {
+  return invoke('list_recordings');
+}
+
+export async function deleteRecording(path: string): Promise<void> {
+  return invoke('delete_recording', { path });
+}
+
+/** Deletes all saved recordings except ones in progress; resolves with how many were deleted. */
+export async function deleteAllRecordings(): Promise<number> {
+  return invoke('delete_all_recordings');
+}
+
+export async function openRecording(path: string): Promise<void> {
+  return invoke('open_recording', { path });
+}
+
+export async function revealRecording(path: string): Promise<void> {
+  return invoke('reveal_recording', { path });
+}
+
+/** Where ffmpeg was found, or null. Shrinking recordings needs it. */
+export async function ffmpegLocation(): Promise<string | null> {
+  return invoke('ffmpeg_location');
 }
 
 /** Apps the user installed on a running device (system apps excluded). */
