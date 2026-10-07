@@ -1,8 +1,8 @@
-import { Check } from 'lucide-react';
-import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { generateLorem } from '@/lib/lorem';
+import { Check } from "lucide-react";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { generateLorem } from "@/lib/lorem";
 
-const LENGTHS = [100, 250, 500];
+const LENGTHS = [100, 250, 500, 1000];
 
 export function LoremIpsum() {
   const { copiedKey, copy } = useCopyToClipboard();
@@ -21,7 +21,7 @@ export function LoremIpsum() {
             aria-label={`Copy ${length} characters of lorem ipsum`}
           >
             {copiedKey === key ? <Check size={12} /> : null}
-            <span>{copiedKey === key ? 'Copied' : `${length} chars`}</span>
+            <span>{copiedKey === key ? "Copied" : `${length} chars`}</span>
           </button>
         );
       })}
