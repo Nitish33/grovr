@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Pin, PinOff, RefreshCw, Smartphone } from 'lucide-react';
+import { Pin, PinOff, RefreshCw, ScrollText, Smartphone } from 'lucide-react';
 import { DeviceNote } from '@/components/DeviceNote';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { useDevices, type DevicePlatform } from '@/hooks/useDevices';
+import * as api from '@/lib/api';
 import type { Device } from '@/lib/api';
 
 type PendingAction = { type: 'launch' | 'unpin'; deviceId: string };
@@ -43,27 +44,47 @@ export function DevicesTab({ platform }: DevicesTabProps) {
     };
   }, [devices, pinned, platform]);
 
+  const openLogs = async (device: Device) => {
+    try {
+      await api.openLogWindow(platform, device.id, device.name);
+    } catch (err) {
+      console.error('Failed to open the log window:', err);
+    }
+  };
+
   const renderRow = (device: Device, isPinned: boolean) => {
     const launching = launchingId === device.id;
     const running = device.state === 'Booted';
     return (
       <div key={device.id} className="device-row">
-        <button
-          className="device-row-main"
-          title={running ? `${device.name} is running` : `Open ${device.name}`}
-          aria-label={running ? `${device.name} (running)` : `Open ${device.name}`}
-          disabled={launchingId !== null || running}
-          onClick={() => !running && setPending({ type: 'launch', deviceId: device.id })}
-        >
-          <Smartphone size={14} className="device-row-icon" />
-          <span className="device-row-name">{device.name}</span>
-          {device.runtime && <span className="device-row-meta">{device.runtime}</span>}
-          {launching ? (
-            <span className="device-row-badge">Starting…</span>
-          ) : (
-            running && <span className="device-row-badge">Running</span>
+        <div className="device-row-body">
+          <button
+            className="device-row-main"
+            title={running ? `${device.name} is running` : `Open ${device.name}`}
+            aria-label={running ? `${device.name} (running)` : `Open ${device.name}`}
+            disabled={launchingId !== null || running}
+            onClick={() => !running && setPending({ type: 'launch', deviceId: device.id })}
+          >
+            <Smartphone size={14} className="device-row-icon" />
+            <span className="device-row-name">{device.name}</span>
+            {device.runtime && <span className="device-row-meta">{device.runtime}</span>}
+            {launching ? (
+              <span className="device-row-badge">Starting…</span>
+            ) : (
+              running && <span className="device-row-badge">Running</span>
+            )}
+          </button>
+          {running && (
+            <button
+              className="device-row-logs"
+              title={`Stream native logs from ${device.name} in a new window`}
+              onClick={() => void openLogs(device)}
+            >
+              <ScrollText size={12} />
+              <span>Stream logs</span>
+            </button>
           )}
-        </button>
+        </div>
         <DeviceNote
           note={notes[`${platform}:${device.id}`] ?? ''}
           deviceName={device.name}

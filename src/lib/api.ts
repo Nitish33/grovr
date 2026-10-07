@@ -121,6 +121,33 @@ export async function openJsonViewer(): Promise<void> {
   return invoke('open_json_viewer');
 }
 
+export type DevicePlatform = 'ios' | 'android';
+
+/** Opens the live native-log window for a running device. */
+export async function openLogWindow(platform: DevicePlatform, deviceId: string, deviceName: string): Promise<void> {
+  return invoke('open_log_window', { platform, deviceId, deviceName });
+}
+
+/** Saves log text to a temp file and returns its path. */
+export async function saveLogSnapshot(deviceName: string, content: string): Promise<string> {
+  return invoke('save_log_snapshot', { deviceName, content });
+}
+
+/** Process ID -> process (package) name for a running Android emulator. */
+export async function listAndroidProcesses(deviceId: string): Promise<Record<string, string>> {
+  return invoke('list_android_processes', { deviceId });
+}
+
+/** Apps the user installed on a running device (system apps excluded). */
+export async function listUserApps(platform: DevicePlatform, deviceId: string): Promise<string[]> {
+  return invoke('list_user_apps', { platform, deviceId });
+}
+
+/** `appFilter` (iOS only) limits the stream to processes whose name contains it. */
+export async function startLogStream(platform: DevicePlatform, deviceId: string, appFilter = ''): Promise<void> {
+  return invoke('start_log_stream', { platform, deviceId, appFilter });
+}
+
 // ============ Clipboard API ============
 
 export async function readClipboardText(): Promise<string> {

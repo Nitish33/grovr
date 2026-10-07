@@ -20,6 +20,7 @@ use commands::settings::{
 };
 use commands::links::open_link;
 use commands::windows::open_json_viewer;
+use commands::logs::{open_log_window, start_log_stream, save_log_snapshot, list_android_processes, list_user_apps};
 use commands::devices::{
     list_ios_simulators, list_android_emulators, launch_ios_simulator, launch_android_emulator,
 };
@@ -101,6 +102,7 @@ pub fn run() {
             }
 
             app.manage(settings_state);
+            app.manage(commands::logs::LogStreams::default());
 
             // Apply window effects
             setup_window_effects(app)?;
@@ -182,6 +184,11 @@ pub fn run() {
             open_link,
             // Windows
             open_json_viewer,
+            open_log_window,
+            start_log_stream,
+            save_log_snapshot,
+            list_android_processes,
+            list_user_apps,
             // Clipboard
             read_clipboard_text,
         ])

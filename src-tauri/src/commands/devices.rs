@@ -128,10 +128,15 @@ fn find_emulator_binary() -> Option<PathBuf> {
     find_sdk_tool("emulator", "emulator")
 }
 
-/// Names of AVDs that are currently running, via `adb`. Best effort: any failure
+/// The `adb` binary, from the Android SDK when found, otherwise whatever is on PATH.
+pub(crate) fn adb_binary() -> PathBuf {
+    find_sdk_tool("platform-tools", "adb").unwrap_or_else(|| PathBuf::from("adb"))
+}
+
+/// Running AVDs as (adb serial, AVD name), via `adb`. Best effort: any failure
 /// (adb missing, daemon not ready) just means "none detected".
-fn running_avd_names() -> Vec<String> {
-    let adb = find_sdk_tool("platform-tools", "adb").unwrap_or_else(|| PathBuf::from("adb"));
+pub(crate) fn running_avds() -> Vec<(String, String)> {
+    let adb = adb_binary();
 
     let Ok(output) = Command::new(&adb).arg("devices").output() else {
         return Vec::new();
@@ -152,13 +157,19 @@ fn running_avd_names() -> Vec<String> {
                 .output()
                 .ok()?;
             // Output is "<avd name>\nOK"
-            String::from_utf8_lossy(&output.stdout)
+            let name = String::from_utf8_lossy(&output.stdout)
                 .lines()
                 .next()
                 .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
+                .filter(|l| !l.is_empty())?;
+            Some((serial, name))
         })
         .collect()
+}
+
+/// Names of AVDs that are currently running.
+fn running_avd_names() -> Vec<String> {
+    running_avds().into_iter().map(|(_, name)| name).collect()
 }
 
 #[tauri::command]

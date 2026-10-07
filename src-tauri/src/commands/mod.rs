@@ -6,3 +6,4 @@ pub mod integrations;
 pub mod devices;
 pub mod windows;
 pub mod links;
+pub mod logs;

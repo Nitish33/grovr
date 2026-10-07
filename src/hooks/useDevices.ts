@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as api from '@/lib/api';
+import type { DevicePlatform } from '@/lib/api';
 
 const POLL_INTERVAL_MS = 4000;
 export const MAX_NOTE_LENGTH = 80;
 
-export type DevicePlatform = 'ios' | 'android';
+export type { DevicePlatform };
 
 function errorMessage(err: unknown): string {
   return typeof err === 'string' ? err : err instanceof Error ? err.message : 'Unknown error';

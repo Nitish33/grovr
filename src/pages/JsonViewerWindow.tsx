@@ -5,12 +5,11 @@ import { ImagePreviewProvider } from '@/components/json/ImagePreview';
 import { JsonCode } from '@/components/json/JsonCode';
 import { JsonHistoryDialog, SaveJsonDialog } from '@/components/json/JsonSaveDialogs';
 import { JsonTree } from '@/components/json/JsonTree';
+import { useAppTheme } from '@/hooks/useAppTheme';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useSavedJson } from '@/hooks/useSavedJson';
 import { usePersistedString } from '@/hooks/usePersistedString';
-import * as api from '@/lib/api';
 import { parseLooseJson, searchJson, type JsonParseResult } from '@/lib/json';
-import { applyTheme, type ThemeMode } from '@/lib/theme';
 
 type ViewMode = 'tree' | 'code';
 
@@ -55,23 +54,7 @@ export function JsonViewerWindow() {
   const searchRef = useRef<HTMLInputElement>(null);
   const { copiedKey, copy } = useCopyToClipboard();
 
-  // Follow the saved app theme (and the OS theme in "system" mode)
-  useEffect(() => {
-    let theme: ThemeMode = 'system';
-    const apply = () => applyTheme(theme);
-    api
-      .getSettings()
-      .then((settings) => {
-        theme = (settings.theme as ThemeMode) || 'system';
-        apply();
-      })
-      .catch(apply);
-
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => theme === 'system' && apply();
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
+  useAppTheme();
 
   const deferredInput = useDeferredValue(input);
   const result = useMemo(() => parseLooseJson(deferredInput), [deferredInput]);

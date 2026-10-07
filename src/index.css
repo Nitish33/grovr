@@ -274,6 +274,13 @@ html, body, #root {
   @apply flex min-w-0 items-center gap-2 pl-3 pr-4 py-1.5 text-left rounded-md cursor-pointer disabled:cursor-default;
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
 }
+.device-row-body { @apply flex flex-col min-w-0; }
+.device-row-logs {
+  @apply flex items-center gap-1 self-start ml-8 mb-1 px-1.5 py-0.5 rounded text-[10px] transition-colors;
+  color: hsl(var(--muted-foreground));
+}
+.device-row-logs:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.device-row-logs:focus-visible { @apply outline-none ring-2 ring-ring; }
 .device-row-icon { color: hsl(var(--muted-foreground)); @apply flex-shrink-0; }
 .device-row-name { @apply truncate; }
 .device-row-meta { @apply flex-shrink-0; color: hsl(var(--muted-foreground)); }
@@ -1391,7 +1398,86 @@ html, body, #root {
 .json-toast {
   @apply fixed bottom-4 left-1/2 z-50 px-3 py-1.5 rounded-md text-xs shadow-lg;
   transform: translateX(-50%);
-  background: hsl(var(--popover));
-  color: hsl(var(--popover-foreground));
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
 }
+.logs-filters { @apply flex items-center gap-2 min-w-0 flex-1; }
+.logs-select {
+  @apply px-2 py-1 rounded-md text-xs outline-none flex-shrink-0;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.logs-app-filter {
+  @apply flex items-center gap-1 flex-none w-72 px-2 py-1 rounded-md text-xs;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+}
+.logs-app-filter:focus-within { border-color: hsl(var(--ring)); }
+.logs-app-filter-prefix { @apply flex-shrink-0 font-mono; color: hsl(var(--muted-foreground)); }
+.logs-app-filter-input {
+  @apply flex-1 min-w-0 bg-transparent font-mono outline-none;
+  color: hsl(var(--foreground));
+}
+.logs-app-filter-clear { @apply flex-shrink-0 rounded; color: hsl(var(--muted-foreground)); }
+.logs-app-filter-clear:hover { color: hsl(var(--foreground)); }
+.logs-select:focus-visible { border-color: hsl(var(--ring)); }
+.logs-search { @apply flex items-center gap-2 min-w-0 flex-1; }
+.logs-viewport { @apply relative flex-1 min-h-0; }
+.logs-output {
+  @apply h-full overflow-auto px-3 py-2 font-mono text-xs;
+  display: grid;
+  column-gap: 1rem;
+  align-content: start;
+}
+.logs-line {
+  @apply py-0.5;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+}
+.logs-time, .logs-ids, .logs-package { color: hsl(var(--muted-foreground)); @apply whitespace-nowrap; }
+.logs-package { @apply truncate; }
+.logs-tag { @apply truncate; }
+.logs-tag-0 { color: hsl(170 55% 45%); }
+.logs-tag-1 { color: hsl(210 70% 60%); }
+.logs-tag-2 { color: hsl(280 55% 65%); }
+.logs-tag-3 { color: hsl(25 80% 55%); }
+.logs-tag-4 { color: hsl(330 65% 62%); }
+.logs-tag-5 { color: hsl(90 45% 45%); }
+.logs-tag-6 { color: hsl(50 70% 45%); }
+.logs-tag-7 { color: hsl(190 65% 48%); }
+.logs-badge {
+  @apply inline-block w-5 text-center rounded-sm font-bold;
+}
+.logs-badge-debug { background: hsl(210 50% 40% / 0.5); }
+.logs-badge-info { background: hsl(100 30% 40% / 0.5); }
+.logs-badge-warn { background: hsl(50 70% 45% / 0.5); }
+.logs-badge-error { background: hsl(var(--destructive) / 0.5); }
+.logs-message { @apply whitespace-pre-wrap break-words min-w-0; }
+.logs-new-pill {
+  @apply absolute bottom-3 left-1/2 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium shadow-lg transition-colors;
+  transform: translateX(-50%);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.logs-new-pill:hover { opacity: 0.9; }
+.logs-new-pill:focus-visible { @apply outline-none ring-2 ring-ring; }
+.logs-line-debug .logs-message { color: hsl(var(--muted-foreground)); }
+.logs-line-info .logs-message { color: hsl(100 35% 38%); }
+.dark .logs-line-info .logs-message { color: hsl(90 38% 62%); }
+.logs-line-warn .logs-message { color: hsl(38 92% 45%); }
+.dark .logs-line-warn .logs-message { color: hsl(43 96% 60%); }
+.logs-line-error .logs-message { color: hsl(var(--destructive)); }
+.logs-columns { @apply relative; }
+.logs-columns-menu {
+  @apply absolute right-0 top-full z-50 mt-1 flex flex-col gap-0.5 p-1 rounded-md shadow-lg min-w-[11rem];
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+}
+.logs-columns-item {
+  @apply flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer;
+}
+.logs-columns-item:hover { background: hsl(var(--secondary)); }
