@@ -1,8 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pin, PinOff, RefreshCw, Smartphone } from 'lucide-react';
 import { DeviceNote } from '@/components/DeviceNote';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { useDevices, type DevicePlatform } from '@/hooks/useDevices';
 import type { Device } from '@/lib/api';
+
+type PendingAction = { type: 'launch' | 'unpin'; deviceId: string };
 
 interface DevicesTabProps {
   platform: DevicePlatform;
@@ -18,6 +21,19 @@ export function DevicesTab({ platform }: DevicesTabProps) {
     devices, pinned, notes, loading, error, refresh, togglePin, saveNote, launch, launchingId, launchError,
   } = useDevices(platform);
   const { noun, empty } = COPY[platform];
+  const [pending, setPending] = useState<PendingAction | null>(null);
+
+  // A launch confirmation is moot once the device is already running (e.g. started
+  // elsewhere while the dialog was open), so don't show it.
+  const pendingDevice = pending ? devices.find((d) => d.id === pending.deviceId) : undefined;
+  const confirmOpen =
+    pending !== null && pendingDevice !== undefined && !(pending.type === 'launch' && pendingDevice.state === 'Booted');
+
+  const handleConfirm = () => {
+    if (!pending) return;
+    if (pending.type === 'launch') void launch(pending.deviceId);
+    else void togglePin(pending.deviceId);
+  };
 
   const { pinnedDevices, otherDevices } = useMemo(() => {
     const isPinned = (d: Device) => pinned.includes(`${platform}:${d.id}`);
@@ -37,7 +53,7 @@ export function DevicesTab({ platform }: DevicesTabProps) {
           title={running ? `${device.name} is running` : `Open ${device.name}`}
           aria-label={running ? `${device.name} (running)` : `Open ${device.name}`}
           disabled={launchingId !== null || running}
-          onClick={() => void launch(device.id)}
+          onClick={() => !running && setPending({ type: 'launch', deviceId: device.id })}
         >
           <Smartphone size={14} className="device-row-icon" />
           <span className="device-row-name">{device.name}</span>
@@ -58,7 +74,8 @@ export function DevicesTab({ platform }: DevicesTabProps) {
           title={isPinned ? `Unpin ${noun}` : `Pin ${noun} to top`}
           aria-label={isPinned ? `Unpin ${device.name}` : `Pin ${device.name} to top`}
           aria-pressed={isPinned}
-          onClick={() => void togglePin(device.id)}
+          // Pinning is instant; unpinning asks first
+          onClick={() => (isPinned ? setPending({ type: 'unpin', deviceId: device.id }) : void togglePin(device.id))}
         >
           {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
         </button>
@@ -94,6 +111,21 @@ export function DevicesTab({ platform }: DevicesTabProps) {
           {otherDevices.map((d) => renderRow(d, false))}
         </div>
       </div>
+
+      <ConfirmModal
+        open={confirmOpen}
+        onOpenChange={(open) => !open && setPending(null)}
+        title={pending?.type === 'unpin' ? `Unpin ${noun}?` : `Open ${noun}?`}
+        description={
+          pending?.type === 'unpin'
+            ? `"${pendingDevice?.name ?? ''}" will move back to the main list.`
+            : `Start "${pendingDevice?.name ?? ''}"?`
+        }
+        confirmLabel={pending?.type === 'unpin' ? 'Unpin' : 'Open'}
+        variant={pending?.type === 'unpin' ? 'warning' : 'info'}
+        onConfirm={handleConfirm}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }
