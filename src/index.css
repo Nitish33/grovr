@@ -275,8 +275,9 @@ html, body, #root {
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
 }
 .device-row-body { @apply flex flex-col min-w-0; }
+.device-row-tools { @apply flex items-center gap-1 self-start ml-8 mb-1; }
 .device-row-logs {
-  @apply flex items-center gap-1 self-start ml-8 mb-1 px-1.5 py-0.5 rounded text-[10px] transition-colors;
+  @apply flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors;
   color: hsl(var(--muted-foreground));
 }
 .device-row-logs:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
@@ -1496,3 +1497,23 @@ html, body, #root {
   @apply flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer;
 }
 .logs-columns-item:hover { background: hsl(var(--secondary)); }
+
+/* Quick actions bar docked beside a simulator/emulator (transparent window) */
+html.dock-root,
+html.dock-root body,
+html.dock-root #root { background: transparent; }
+.dock-bar {
+  @apply flex flex-col items-center gap-1 h-full p-1 rounded-xl;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+}
+.dock-button {
+  @apply w-9 h-9 rounded-lg flex items-center justify-center transition-colors;
+  color: hsl(var(--muted-foreground));
+}
+.dock-button:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.dock-button:focus-visible { @apply outline-none ring-2 ring-ring; }
+.dock-button-danger:hover { background: hsl(var(--destructive) / 0.15); color: hsl(var(--destructive)); }
+.dock-button-ok { color: hsl(142 70% 45%); }
+.dock-button-error { color: hsl(var(--destructive)); }

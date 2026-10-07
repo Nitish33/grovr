@@ -153,6 +153,23 @@ export async function listAndroidProcesses(deviceId: string): Promise<Record<str
   return invoke('list_android_processes', { deviceId });
 }
 
+/** Shows the quick actions bar docked to a running device's window, or hides it if shown. */
+export async function toggleDeviceDock(platform: DevicePlatform, deviceId: string, deviceName: string): Promise<void> {
+  return invoke('toggle_device_dock', { platform, deviceId, deviceName });
+}
+
+export type DeviceQuickAction = 'screenshot' | 'toggle_appearance' | 'open_url' | 'shutdown';
+
+/** Runs a quick action; returns a short result (screenshot path, new appearance) when there is one. */
+export async function deviceQuickAction(
+  platform: DevicePlatform,
+  deviceId: string,
+  action: DeviceQuickAction,
+  payload?: string
+): Promise<string | null> {
+  return invoke('device_quick_action', { platform, deviceId, action, payload });
+}
+
 /** Apps the user installed on a running device (system apps excluded). */
 export async function listUserApps(platform: DevicePlatform, deviceId: string): Promise<string[]> {
   return invoke('list_user_apps', { platform, deviceId });

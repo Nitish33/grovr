@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pin, PinOff, RefreshCw, ScrollText, Smartphone } from 'lucide-react';
+import { PanelRight, Pin, PinOff, RefreshCw, ScrollText, Smartphone } from 'lucide-react';
 import { DeviceNote } from '@/components/DeviceNote';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { useDevices, type DevicePlatform } from '@/hooks/useDevices';
@@ -52,6 +52,14 @@ export function DevicesTab({ platform }: DevicesTabProps) {
     }
   };
 
+  const toggleDock = async (device: Device) => {
+    try {
+      await api.toggleDeviceDock(platform, device.id, device.name);
+    } catch (err) {
+      console.error('Failed to toggle the quick actions bar:', err);
+    }
+  };
+
   const renderRow = (device: Device, isPinned: boolean) => {
     const launching = launchingId === device.id;
     const running = device.state === 'Booted';
@@ -75,14 +83,24 @@ export function DevicesTab({ platform }: DevicesTabProps) {
             )}
           </button>
           {running && (
-            <button
-              className="device-row-logs"
-              title={`Stream native logs from ${device.name} in a new window`}
-              onClick={() => void openLogs(device)}
-            >
-              <ScrollText size={12} />
-              <span>Stream logs</span>
-            </button>
+            <div className="device-row-tools">
+              <button
+                className="device-row-logs"
+                title={`Stream native logs from ${device.name} in a new window`}
+                onClick={() => void openLogs(device)}
+              >
+                <ScrollText size={12} />
+                <span>Stream logs</span>
+              </button>
+              <button
+                className="device-row-logs"
+                title={`Show or hide the quick actions bar docked to ${device.name}`}
+                onClick={() => void toggleDock(device)}
+              >
+                <PanelRight size={12} />
+                <span>Quick bar</span>
+              </button>
+            </div>
           )}
         </div>
         <DeviceNote

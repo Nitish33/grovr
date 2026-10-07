@@ -20,6 +20,7 @@ use commands::settings::{
 };
 use commands::links::open_link;
 use commands::windows::open_json_viewer;
+use commands::dock::{toggle_device_dock, device_quick_action};
 use commands::logs::{open_log_window, start_log_stream, save_log_snapshot, list_android_processes, list_user_apps};
 use commands::devices::{
     list_ios_simulators, list_android_emulators, launch_ios_simulator, launch_android_emulator,
@@ -71,7 +72,13 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                // The quick bars are positioned by the app beside a device window; restoring a
+                // saved position (or visibility) would fight that
+                .with_filter(|label| !label.starts_with("dock-"))
+                .build(),
+        )
         .plugin(tauri_plugin_liquid_glass::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
@@ -185,6 +192,8 @@ pub fn run() {
             // Windows
             open_json_viewer,
             open_log_window,
+            toggle_device_dock,
+            device_quick_action,
             get_worktree_git_status,
             start_log_stream,
             save_log_snapshot,

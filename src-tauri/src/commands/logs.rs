@@ -182,11 +182,16 @@ pub async fn start_log_stream(
             *next += 1;
             *next
         };
-        state
+        // Two starts can overlap (e.g. React dev double-mount); the loser must not keep running
+        let replaced = state
             .streams
             .lock()
             .map_err(|e| e.to_string())?
             .insert(label.clone(), Stream { generation, child });
+        if let Some(mut old) = replaced {
+            let _ = old.child.kill();
+            let _ = old.child.wait();
+        }
 
         let (tx, rx) = mpsc::channel::<String>();
         std::thread::spawn(move || {
