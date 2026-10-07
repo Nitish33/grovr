@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { Pin, PinOff, RefreshCw, Smartphone } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { DeviceNote } from '@/components/DeviceNote';
 import { useDevices, type DevicePlatform } from '@/hooks/useDevices';
 import type { Device } from '@/lib/api';
@@ -78,7 +77,8 @@ export function DevicesTab({ platform }: DevicesTabProps) {
         </button>
       </div>
 
-      <ScrollArea className="flex-1">
+      {/* Plain scroll container: Radix ScrollArea would widen to fit long notes */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="devices-table pl-2 pr-3 pb-2">
           {error && <div className="devices-message">{error}</div>}
           {launchError && <div className="devices-message">{launchError}</div>}
@@ -93,7 +93,7 @@ export function DevicesTab({ platform }: DevicesTabProps) {
           )}
           {otherDevices.map((d) => renderRow(d, false))}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

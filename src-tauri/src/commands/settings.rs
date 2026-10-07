@@ -1,4 +1,4 @@
-use crate::types::{AppSettings, IdeConfig, WorktreeMemo};
+use crate::types::{AppSettings, IdeConfig, NoteItem, WorktreeMemo};
 use tauri::{Manager, State};
 #[cfg(not(target_os = "macos"))]
 use tauri_plugin_autostart::ManagerExt;
@@ -212,6 +212,31 @@ pub fn set_device_note(
     } else {
         settings.device_notes.insert(key, note);
     }
+    save_settings(&app, &settings)
+}
+
+const MAX_NOTES: usize = 500;
+const MAX_NOTE_TEXT_CHARS: usize = 10_000;
+
+/// Replaces the full list of Notes-tab notes (pinned first, then by user order).
+/// Blank notes are dropped and sizes are capped.
+#[tauri::command]
+pub fn set_notes(
+    app: tauri::AppHandle,
+    state: State<SettingsState>,
+    notes: Vec<NoteItem>,
+) -> Result<(), String> {
+    let cleaned: Vec<NoteItem> = notes
+        .into_iter()
+        .filter_map(|note| {
+            let text: String = note.text.trim().chars().take(MAX_NOTE_TEXT_CHARS).collect();
+            (!text.is_empty()).then_some(NoteItem { id: note.id, text, pinned: note.pinned })
+        })
+        .take(MAX_NOTES)
+        .collect();
+
+    let mut settings = state.0.lock().map_err(|e| e.to_string())?;
+    settings.notes = cleaned;
     save_settings(&app, &settings)
 }
 

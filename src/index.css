@@ -165,6 +165,57 @@ html, body, #root {
 .tool-chip:hover { background: hsl(var(--secondary) / 0.7); }
 .tool-chip:focus-visible { @apply outline-none ring-2 ring-ring; }
 
+/* Notes */
+.note-add { @apply px-3 pb-2 flex-shrink-0; }
+.note-input,
+.note-edit-input {
+  @apply w-full px-3 py-1.5 rounded-md text-xs outline-none;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.note-edit-input { @apply resize-none; overflow-wrap: anywhere; }
+.note-input:focus-visible,
+.note-edit-input { border-color: hsl(var(--ring)); }
+.note-input::placeholder { color: hsl(var(--muted-foreground)); }
+.note-row {
+  @apply flex items-start gap-1 pl-1 pr-1 rounded-md text-xs transition-colors;
+}
+.note-row:hover { background: hsl(var(--accent) / 0.5); }
+.note-row-dragging {
+  @apply relative z-10 shadow-md;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+}
+.note-grip {
+  @apply w-5 h-6 mt-1 rounded flex items-center justify-center flex-shrink-0 opacity-0 cursor-grab transition-opacity;
+  color: hsl(var(--muted-foreground));
+  touch-action: none;
+}
+.note-grip:active { @apply cursor-grabbing; }
+.note-row:hover .note-grip,
+.note-grip:focus-visible,
+.note-row-dragging .note-grip { @apply opacity-100; }
+.note-grip:focus-visible { @apply outline-none ring-2 ring-ring; }
+.note-text {
+  @apply flex-1 min-w-0 px-2 py-1.5 text-left rounded-md cursor-text;
+}
+.note-text-content {
+  @apply block;
+  overflow-wrap: anywhere; /* wrap long tokens and URLs that have no spaces */
+}
+.note-text:focus-visible { @apply outline-none ring-2 ring-ring; }
+.note-actions { @apply flex items-center gap-0.5 flex-shrink-0 mt-1; }
+.note-action {
+  @apply w-6 h-6 rounded flex items-center justify-center opacity-0 transition-opacity;
+  color: hsl(var(--muted-foreground));
+}
+.note-row:hover .note-action,
+.note-action:focus-visible,
+.note-action-active { @apply opacity-100; }
+.note-action:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.note-action:focus-visible { @apply outline-none ring-2 ring-ring; }
+
 /* Devices (simulators / emulators) */
 .devices-toolbar {
   @apply flex items-center justify-between px-3 pb-1 flex-shrink-0;

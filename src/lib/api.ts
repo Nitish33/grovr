@@ -35,6 +35,12 @@ export interface BackendProjectConfig {
   ide?: BackendIdeConfig;
 }
 
+export interface Note {
+  id: string;
+  text: string;
+  pinned: boolean;
+}
+
 export interface BackendAppSettings {
   ide?: BackendIdeConfig;
   theme: string;
@@ -53,6 +59,7 @@ export interface BackendAppSettings {
   global_shortcut?: string;
   pinned_devices?: string[];
   device_notes?: Record<string, string>;
+  notes?: Note[];
 }
 
 // ============ Devices API ============
@@ -78,6 +85,10 @@ export async function launchIosSimulator(udid: string): Promise<void> {
 
 export async function launchAndroidEmulator(avdName: string): Promise<void> {
   return invoke('launch_android_emulator', { avdName });
+}
+
+export async function setNotes(notes: Note[]): Promise<void> {
+  return invoke('set_notes', { notes });
 }
 
 export async function setDeviceNote(key: string, note: string): Promise<void> {

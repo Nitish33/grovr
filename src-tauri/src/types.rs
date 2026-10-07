@@ -84,6 +84,15 @@ pub struct WorktreeMemo {
     pub issue_number: Option<String>,
 }
 
+/// A quick-copy note from the Notes tab
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NoteItem {
+    pub id: String,
+    pub text: String,
+    #[serde(default)]
+    pub pinned: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct AppSettings {
     #[serde(default)]
@@ -124,6 +133,9 @@ pub struct AppSettings {
     /// Short user notes for simulators/emulators, keyed like `pinned_devices`
     #[serde(default)]
     pub device_notes: HashMap<String, String>,
+    /// Quick-copy notes, newest first
+    #[serde(default)]
+    pub notes: Vec<NoteItem>,
 }
 
 fn default_theme() -> String {

@@ -58,6 +58,7 @@ import { AlertModal } from '@/components/ui/alert-modal';
 import xcodeIcon from '@/assets/ide-icons/xcode.svg';
 import androidStudioIcon from '@/assets/ide-icons/android-studio.svg';
 import { DevicesTab } from '@/components/DevicesTab';
+import { NotesTab } from '@/components/NotesTab';
 import { ToolsTab } from '@/components/ToolsTab';
 import { useNativeProjects } from '@/hooks/useNativeProjects';
 import { getIDEInfo } from '@/lib/ide-config';
@@ -67,13 +68,14 @@ import type { UpdateInfo } from '@/lib/updater';
 import type { Project, Worktree, IDEPreset } from '@/types';
 import type { PullRequestInfo, JiraIssueInfo } from '@/lib/api';
 
-type MainTab = 'worktree' | 'tools' | 'simulator' | 'emulator';
+type MainTab = 'worktree' | 'tools' | 'simulator' | 'emulator' | 'notes';
 
 const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'worktree', label: 'Worktree' },
   { id: 'tools', label: 'Tools' },
   { id: 'simulator', label: 'Simulator' },
   { id: 'emulator', label: 'Emulator' },
+  { id: 'notes', label: 'Notes' },
 ];
 
 interface WorktreeListPageProps {
@@ -691,6 +693,17 @@ export function WorktreeListPage({
           className="flex-1 min-h-0 flex flex-col"
         >
           <DevicesTab platform="ios" />
+        </div>
+      )}
+
+      {activeTab === 'notes' && (
+        <div
+          id="main-tabpanel-notes"
+          role="tabpanel"
+          aria-labelledby="main-tab-notes"
+          className="flex-1 min-h-0 flex flex-col"
+        >
+          <NotesTab />
         </div>
       )}
 
