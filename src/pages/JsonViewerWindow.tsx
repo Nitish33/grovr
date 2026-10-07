@@ -1,13 +1,13 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { readText } from '@tauri-apps/plugin-clipboard-manager';
-import { Check, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, Trash2 } from 'lucide-react';
+import { Check, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, Search, Trash2, X } from 'lucide-react';
 import { ImagePreviewProvider } from '@/components/json/ImagePreview';
 import { JsonCode } from '@/components/json/JsonCode';
 import { JsonTree } from '@/components/json/JsonTree';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { usePersistedString } from '@/hooks/usePersistedString';
 import * as api from '@/lib/api';
-import { parseLooseJson, type JsonParseResult } from '@/lib/json';
+import { parseLooseJson, searchJson, type JsonParseResult } from '@/lib/json';
 import { applyTheme, type ThemeMode } from '@/lib/theme';
 
 type ViewMode = 'tree' | 'code';
@@ -43,7 +43,9 @@ export function JsonViewerWindow() {
   const [treeDepth, setTreeDepth] = useState(DEFAULT_TREE_DEPTH);
   const [treeResetKey, setTreeResetKey] = useState(0);
   const [leftPct, setLeftPct] = useState(45);
+  const [query, setQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const { copiedKey, copy } = useCopyToClipboard();
 
   // Follow the saved app theme (and the OS theme in "system" mode)
@@ -70,6 +72,26 @@ export function JsonViewerWindow() {
     () => (result?.ok ? (JSON.stringify(result.value, null, 2) ?? '') : ''),
     [result]
   );
+
+  // Search runs on a deferred copy of the query so typing stays responsive on big documents
+  const deferredQuery = useDeferredValue(query);
+  const search = useMemo(
+    () => (result?.ok && deferredQuery.trim() !== '' ? searchJson(result.value, deferredQuery) : null),
+    [result, deferredQuery]
+  );
+
+  // Cmd/Ctrl+F jumps to the search box
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const handlePaste = useCallback(async () => {
     try {
@@ -165,7 +187,7 @@ export function JsonViewerWindow() {
               ))}
             </div>
             <div className="json-toolbar-actions">
-              {result?.ok && view === 'tree' && (
+              {result?.ok && view === 'tree' && !search && (
                 <>
                   <button
                     className="json-button"
@@ -194,14 +216,47 @@ export function JsonViewerWindow() {
             </div>
           </div>
 
+          {result?.ok && (
+            <div className="json-search">
+              <Search size={12} className="json-search-icon" />
+              <input
+                ref={searchRef}
+                className="json-search-input"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+                placeholder="Filter keys and values…  (⌘F)"
+                aria-label="Filter keys and values"
+                spellCheck={false}
+              />
+              {search && (
+                <span className="json-search-count" aria-live="polite">
+                  {search.matches.size === 0
+                    ? 'No matches'
+                    : `${search.matches.size} match${search.matches.size === 1 ? '' : 'es'}`}
+                </span>
+              )}
+              {query !== '' && (
+                <button className="json-button" onClick={() => setQuery('')} title="Clear filter" aria-label="Clear filter">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )}
+
           <div className={`json-status ${result && !result.ok ? 'json-status-error' : ''}`}>{status}</div>
 
           <div className="json-output">
             {result?.ok === false && <ErrorDetails result={result} input={deferredInput} />}
-            {result?.ok && view === 'tree' && (
-              <JsonTree value={result.value} initialDepth={treeDepth} resetKey={treeResetKey} />
+            {result?.ok && search && search.matches.size === 0 && (
+              <div className="devices-message">Nothing matches &quot;{query.trim()}&quot;.</div>
             )}
-            {result?.ok && view === 'code' && <JsonCode value={result.value} text={formatted} />}
+            {result?.ok && view === 'tree' && !(search && search.matches.size === 0) && (
+              <JsonTree value={result.value} initialDepth={treeDepth} resetKey={treeResetKey} search={search} />
+            )}
+            {result?.ok && view === 'code' && !(search && search.matches.size === 0) && (
+              <JsonCode value={result.value} text={formatted} search={search} />
+            )}
           </div>
         </section>
       </div>

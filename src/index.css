@@ -1359,3 +1359,19 @@ html, body, #root {
   @apply px-3 py-2 text-xs;
   color: hsl(var(--muted-foreground));
 }
+.json-search {
+  @apply flex items-center gap-2 px-3 py-1.5 flex-shrink-0;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.json-search-icon { color: hsl(var(--muted-foreground)); @apply flex-shrink-0; }
+.json-search-input {
+  @apply flex-1 min-w-0 bg-transparent text-xs outline-none;
+  color: hsl(var(--foreground));
+}
+.json-search-input::placeholder { color: hsl(var(--muted-foreground)); }
+.json-search-count { @apply text-xs flex-shrink-0; color: hsl(var(--muted-foreground)); }
+.json-match {
+  @apply rounded-sm;
+  background: hsl(var(--json-number) / 0.35);
+  color: inherit;
+}

@@ -95,6 +95,50 @@ export function copyText(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? String(value);
 }
 
+export interface JsonSearch {
+  query: string;
+  /** Node paths to show: matches, their ancestors, and everything under a matching key. */
+  visible: Set<string>;
+  /** Node paths that match by themselves (key or primitive value). */
+  matches: Set<string>;
+}
+
+/**
+ * Finds nodes whose key or primitive value contains `query` (case-insensitive).
+ * Paths use the same scheme as the tree and code views ("$", "$.key", "$.list.0").
+ * A node is visible if it matches, if a descendant matches, or if an ancestor's key matches
+ * (so searching a key shows its whole contents).
+ */
+export function searchJson(root: unknown, query: string): JsonSearch {
+  const needle = query.trim().toLowerCase();
+  const visible = new Set<string>();
+  const matches = new Set<string>();
+
+  const walk = (value: unknown, key: string | null, path: string, ancestorMatched: boolean): boolean => {
+    const keyMatches = key !== null && key.toLowerCase().includes(needle);
+    const valueMatches = !isContainer(value) && String(value).toLowerCase().includes(needle);
+    const selfMatches = keyMatches || valueMatches;
+    if (selfMatches) matches.add(path);
+
+    let descendantMatches = false;
+    if (isContainer(value)) {
+      const isArray = Array.isArray(value);
+      for (const [childKey, child] of childEntries(value)) {
+        // Array indices are positions, not names, so they are not searchable keys
+        const found = walk(child, isArray ? null : childKey, `${path}.${childKey}`, ancestorMatched || keyMatches);
+        descendantMatches = found || descendantMatches;
+      }
+    }
+
+    const show = ancestorMatched || selfMatches || descendantMatches;
+    if (show) visible.add(path);
+    return selfMatches || descendantMatches;
+  };
+
+  if (needle !== '') walk(root, null, '$', false);
+  return { query: needle, visible, matches };
+}
+
 export type JsonValueKind = 'string' | 'number' | 'boolean' | 'null' | 'punct';
 
 export interface JsonCodeLine {
