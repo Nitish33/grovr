@@ -1250,7 +1250,15 @@ html, body, #root {
   @apply flex-1 min-h-0 overflow-auto px-3 pb-3;
 }
 .json-code {
-  @apply font-mono text-xs whitespace-pre;
+  @apply font-mono text-xs;
+}
+.json-code-plain {
+  @apply whitespace-pre-wrap;
+  overflow-wrap: anywhere;
+}
+.json-line {
+  @apply relative pr-8 whitespace-pre-wrap rounded; /* pr leaves room for the copy button */
+  overflow-wrap: anywhere; /* wrap long URLs/tokens that have no spaces */
 }
 .json-tree {
   @apply font-mono text-xs;
@@ -1277,6 +1285,8 @@ html, body, #root {
 .json-null { color: hsl(var(--json-null)); }
 .json-actions {
   @apply ml-1 flex items-center gap-0.5 flex-shrink-0;
+.json-line:hover { background: hsl(var(--accent) / 0.5); }
+.json-line-copy { @apply absolute right-1 top-0; } /* out of the text flow, so it never changes line height */
 }
 .json-action {
   @apply w-5 h-5 rounded flex items-center justify-center opacity-0 transition-opacity;
@@ -1308,6 +1318,7 @@ html, body, #root {
 .image-preview {
   @apply fixed z-50 p-1 rounded-md shadow-lg pointer-events-none;
   background: hsl(var(--card));
+.json-line:hover .json-action,
   border: 1px solid hsl(var(--border));
 }
 .image-preview-img {

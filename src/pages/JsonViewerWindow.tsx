@@ -201,7 +201,7 @@ export function JsonViewerWindow() {
             {result?.ok && view === 'tree' && (
               <JsonTree value={result.value} initialDepth={treeDepth} resetKey={treeResetKey} />
             )}
-            {result?.ok && view === 'code' && <JsonCode text={formatted} />}
+            {result?.ok && view === 'code' && <JsonCode value={result.value} text={formatted} />}
           </div>
         </section>
       </div>

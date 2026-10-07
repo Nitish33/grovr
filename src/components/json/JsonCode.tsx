@@ -1,63 +1,72 @@
 import { useMemo } from 'react';
+import { Check, Copy } from 'lucide-react';
 import { useImagePreview } from '@/components/json/ImagePreview';
-import { imageUrlOf, tokenizeJson } from '@/lib/json';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { buildCodeLines, copyText, imageUrlOf, type JsonCodeLine } from '@/lib/json';
 
-/** Beyond this size, skip syntax highlighting to keep the window responsive. */
-const MAX_HIGHLIGHT_CHARS = 300_000;
+/** Beyond this size, render plain wrapped text: per-line DOM would be too heavy. */
+const MAX_LINE_RENDER_CHARS = 300_000;
 
-/** Image URL inside a quoted JSON string token, if it is one. */
-function imageUrlFromToken(token: string): string | null {
-  try {
-    const parsed: unknown = JSON.parse(token);
-    return typeof parsed === 'string' ? imageUrlOf(parsed) : null;
-  } catch {
-    return null;
-  }
-}
+/** Width of one indent level, matching JSON.stringify's two spaces. */
+const INDENT_CH = 2;
 
-export function JsonCode({ text }: { text: string }) {
-  const preview = useImagePreview();
-  const tokens = useMemo(
-    () => (text.length > MAX_HIGHLIGHT_CHARS ? null : tokenizeJson(text)),
-    [text]
-  );
-
-  return (
-    <pre className="json-code">
-      {tokens
-        ? tokens.map((token, i) =>
-            token.kind === 'plain' ? (
-              token.text
-            ) : (
-              <HighlightedToken key={i} kind={token.kind} text={token.text} preview={preview} />
-            )
-          )
-        : text}
-    </pre>
-  );
-}
-
-function HighlightedToken({
-  kind,
-  text,
-  preview,
-}: {
-  kind: string;
+interface JsonCodeProps {
+  value: unknown;
+  /** The same value formatted with JSON.stringify(value, null, 2). */
   text: string;
-  preview: ReturnType<typeof useImagePreview>;
-}) {
-  const imageUrl = kind === 'string' ? imageUrlFromToken(text) : null;
-  const className = kind === 'key' ? 'json-key' : `json-${kind}`;
+}
 
-  if (!imageUrl) return <span className={className}>{text}</span>;
+function ValueText({ line }: { line: JsonCodeLine }) {
+  const preview = useImagePreview();
+  const imageUrl = line.kind === 'string' ? imageUrlOf(JSON.parse(line.text) as string) : null;
+
+  if (!imageUrl) return <span className={`json-${line.kind}`}>{line.text}</span>;
 
   return (
     <span
-      className={`${className} json-image-link`}
+      className="json-string json-image-link"
       onMouseEnter={(e) => preview.show(imageUrl, e.currentTarget.getBoundingClientRect())}
       onMouseLeave={preview.hide}
     >
-      {text}
+      {line.text}
     </span>
+  );
+}
+
+export function JsonCode({ value, text }: JsonCodeProps) {
+  const { copiedKey, copy } = useCopyToClipboard();
+  const lines = useMemo(
+    () => (text.length > MAX_LINE_RENDER_CHARS ? null : buildCodeLines(value)),
+    [value, text]
+  );
+
+  if (!lines) return <pre className="json-code json-code-plain">{text}</pre>;
+
+  return (
+    <div className="json-code">
+      {lines.map((line) => (
+        // Depth-based indent is dynamic, so it needs an inline style; wrapped text stays indented
+        <div key={line.id} className="json-line" style={{ paddingLeft: `${line.depth * INDENT_CH}ch` }}>
+          {line.key !== null && (
+            <>
+              <span className="json-key">{JSON.stringify(line.key)}</span>
+              <span className="json-punct">: </span>
+            </>
+          )}
+          <ValueText line={line} />
+          {line.comma && <span className="json-punct">,</span>}
+          {line.hasCopy && (
+            <button
+              className="json-action json-line-copy"
+              onClick={() => void copy(copyText(line.copyValue), line.id)}
+              title="Copy"
+              aria-label={line.key !== null ? `Copy ${line.key}` : 'Copy value'}
+            >
+              {copiedKey === line.id ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

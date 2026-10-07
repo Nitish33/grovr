@@ -95,37 +95,68 @@ export function copyText(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? String(value);
 }
 
-export type JsonTokenKind = 'key' | 'string' | 'number' | 'boolean' | 'null' | 'plain';
+export type JsonValueKind = 'string' | 'number' | 'boolean' | 'null' | 'punct';
 
-const TOKEN_PATTERN =
-  /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+export interface JsonCodeLine {
+  id: string;
+  depth: number;
+  /** Object key shown before the value; null for array items and the root. */
+  key: string | null;
+  /** The value text on this line: a primitive, an opening/closing bracket, or "[]" / "{}". */
+  text: string;
+  kind: JsonValueKind;
+  /** Trailing comma after this line. */
+  comma: boolean;
+  /** Value copied by the line's copy button; absent for closing brackets. */
+  copyValue?: unknown;
+  hasCopy: boolean;
+}
 
-/** Splits formatted JSON into tokens for syntax highlighting. */
-export function tokenizeJson(text: string): { kind: JsonTokenKind; text: string }[] {
-  const tokens: { kind: JsonTokenKind; text: string }[] = [];
-  let last = 0;
+function primitiveKind(value: unknown): JsonValueKind {
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  return 'null';
+}
 
-  for (const match of text.matchAll(TOKEN_PATTERN)) {
-    const index = match.index ?? 0;
-    if (index > last) tokens.push({ kind: 'plain', text: text.slice(last, index) });
+/**
+ * Lays a value out line by line, matching `JSON.stringify(value, null, 2)`
+ * (2-space indent, "[]"/"{}" for empty containers), so each line can carry its own copy button.
+ */
+export function buildCodeLines(root: unknown): JsonCodeLine[] {
+  const lines: JsonCodeLine[] = [];
 
-    if (match[1] !== undefined) {
-      if (match[2] !== undefined) {
-        tokens.push({ kind: 'key', text: match[1] });
-        tokens.push({ kind: 'plain', text: match[2] });
-      } else {
-        tokens.push({ kind: 'string', text: match[1] });
+  const visit = (value: unknown, key: string | null, depth: number, comma: boolean, path: string) => {
+    if (isContainer(value)) {
+      const entries = childEntries(value);
+      const isArray = Array.isArray(value);
+      const [open, close] = isArray ? ['[', ']'] : ['{', '}'];
+
+      if (entries.length === 0) {
+        lines.push({ id: path, depth, key, text: open + close, kind: 'punct', comma, copyValue: value, hasCopy: true });
+        return;
       }
-    } else if (match[3] !== undefined) {
-      tokens.push({ kind: 'boolean', text: match[0] });
-    } else if (match[0] === 'null') {
-      tokens.push({ kind: 'null', text: match[0] });
-    } else {
-      tokens.push({ kind: 'number', text: match[0] });
-    }
-    last = index + match[0].length;
-  }
 
-  if (last < text.length) tokens.push({ kind: 'plain', text: text.slice(last) });
-  return tokens;
+      lines.push({ id: path, depth, key, text: open, kind: 'punct', comma: false, copyValue: value, hasCopy: true });
+      entries.forEach(([childKey, child], i) => {
+        visit(child, isArray ? null : childKey, depth + 1, i < entries.length - 1, `${path}.${childKey}`);
+      });
+      lines.push({ id: `${path}#end`, depth, key: null, text: close, kind: 'punct', comma, hasCopy: false });
+      return;
+    }
+
+    lines.push({
+      id: path,
+      depth,
+      key,
+      text: JSON.stringify(value) ?? 'null',
+      kind: primitiveKind(value),
+      comma,
+      copyValue: value,
+      hasCopy: true,
+    });
+  };
+
+  visit(root, null, 0, false, '$');
+  return lines;
 }
