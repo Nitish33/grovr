@@ -811,6 +811,126 @@ fn adb(serial: &str, args: &[&str], what: &str) -> Result<Vec<u8>, String> {
     run(Command::new(adb_binary()).args(["-s", serial]).args(args), what)
 }
 
+fn valid_app_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && !value.starts_with('-')
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+}
+
+fn android_package_from_focus_line(line: &str) -> Option<String> {
+    for token in line.split_whitespace() {
+        let token = token.trim_matches(|c: char| matches!(c, '{' | '}' | ')' | '(' | '[' | ']'));
+        let Some((package, _activity)) = token.split_once('/') else {
+            continue;
+        };
+        let package = package
+            .rsplit_once(' ')
+            .map(|(_, package)| package)
+            .unwrap_or(package)
+            .trim_matches(|c: char| matches!(c, '{' | '}' | ':' | '='));
+        if valid_app_identifier(package) {
+            return Some(package.to_string());
+        }
+    }
+    None
+}
+
+fn current_android_package(serial: &str) -> Result<String, String> {
+    let window = adb(serial, &["shell", "dumpsys", "window"], "read the focused Android app")?;
+    let window_text = String::from_utf8_lossy(&window);
+    for line in window_text.lines() {
+        if (line.contains("mCurrentFocus") || line.contains("mFocusedApp"))
+            && android_package_from_focus_line(line).is_some()
+        {
+            return Ok(android_package_from_focus_line(line).unwrap());
+        }
+    }
+
+    let activity = adb(serial, &["shell", "dumpsys", "activity", "activities"], "read the resumed Android app")?;
+    let activity_text = String::from_utf8_lossy(&activity);
+    for line in activity_text.lines() {
+        if (line.contains("topResumedActivity") || line.contains("mResumedActivity"))
+            && android_package_from_focus_line(line).is_some()
+        {
+            return Ok(android_package_from_focus_line(line).unwrap());
+        }
+    }
+
+    Err("Could not find the current Android app".to_string())
+}
+
+fn host_uid() -> Result<String, String> {
+    let output = run(Command::new("id").arg("-u"), "read the current user id")?;
+    let uid = String::from_utf8_lossy(&output).trim().to_string();
+    if uid.is_empty() || !uid.chars().all(|c| c.is_ascii_digit()) {
+        return Err("Could not read the current user id".to_string());
+    }
+    Ok(uid)
+}
+
+fn bundle_id_from_launchctl(output: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(&output);
+    let mut bundle_ids: Vec<String> = text
+        .lines()
+        .filter_map(|line| {
+            let start = line.find("UIKitApplication:")? + "UIKitApplication:".len();
+            let value = line[start..]
+                .split(|c: char| c == '[' || c.is_whitespace())
+                .next()?
+                .trim();
+            if value.starts_with("com.apple.") || !valid_app_identifier(value) {
+                None
+            } else {
+                Some(value.to_string())
+            }
+        })
+        .collect();
+    bundle_ids.sort();
+    bundle_ids.dedup();
+    bundle_ids.into_iter().next()
+}
+
+fn current_ios_bundle_id(device_id: &str) -> Result<String, String> {
+    let uid = host_uid()?;
+    let user_domain = format!("user/{}", uid);
+    if let Ok(output) = simctl(
+        &["spawn", device_id, "launchctl", "print", &user_domain],
+        "read the running simulator apps",
+    ) {
+        if let Some(bundle_id) = bundle_id_from_launchctl(&output) {
+            return Ok(bundle_id);
+        }
+    }
+
+    let output = simctl(
+        &["spawn", device_id, "launchctl", "print", "system"],
+        "read the running simulator apps",
+    )?;
+    bundle_id_from_launchctl(&output).ok_or_else(|| "Could not find a running simulator app".to_string())
+}
+
+fn relaunch_current_app(ios: bool, device_id: &str) -> Result<String, String> {
+    if ios {
+        let bundle_id = current_ios_bundle_id(device_id)?;
+        let _ = simctl(&["terminate", device_id, &bundle_id], "terminate the simulator app");
+        simctl(&["launch", device_id, &bundle_id], "launch the simulator app")?;
+        Ok(bundle_id)
+    } else {
+        let serial = android_serial(device_id)?;
+        let package = current_android_package(&serial)?;
+        adb(&serial, &["shell", "am", "force-stop", &package], "stop the Android app")?;
+        adb(
+            &serial,
+            &["shell", "monkey", "-p", &package, "-c", "android.intent.category.LAUNCHER", "1"],
+            "launch the Android app",
+        )?;
+        Ok(package)
+    }
+}
+
 /// A new file in the temp folder for a screenshot on its way to the clipboard.
 fn screenshot_temp_path(device_id: &str) -> Result<PathBuf, String> {
     let name: String = device_id
@@ -947,15 +1067,7 @@ pub async fn device_quick_action(
                 }
                 Ok(None)
             }
-            "shutdown" => {
-                if ios {
-                    simctl(&["shutdown", &device_id], "shut down the simulator")?;
-                } else {
-                    let serial = android_serial(&device_id)?;
-                    adb(&serial, &["emu", "kill"], "shut down the emulator")?;
-                }
-                Ok(None)
-            }
+            "relaunch_app" => relaunch_current_app(ios, &device_id).map(Some),
             _ => Err("Unknown action".to_string()),
         }
     })

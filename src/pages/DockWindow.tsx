@@ -10,7 +10,7 @@ import {
   Link,
   LoaderCircle,
   Plus,
-  Power,
+  RefreshCw,
   Zap,
   ScrollText,
   Settings,
@@ -345,12 +345,12 @@ export function DockWindow() {
       run: openLastDeepLink,
     },
     {
-      id: "shutdown",
-      label: platform === "ios" ? "Shut down simulator" : "Shut down emulator",
-      icon: Power,
+      id: "relaunch-app",
+      label: "Relaunch current app",
+      icon: RefreshCw,
       run: async () => {
-        await api.deviceQuickAction(platform, deviceId, "shutdown");
-        return null;
+        const appName = await api.deviceQuickAction(platform, deviceId, "relaunch_app");
+        return appName ? `Relaunched ${appName}` : "Relaunched app";
       },
     },
     {
@@ -425,9 +425,7 @@ export function DockWindow() {
           return (
             <button
               key={action.id}
-              className={`dock-button ${stateClass} ${action.id === "shutdown" ? "dock-button-danger" : ""} ${
-                action.id === "settings" ? "dock-button-settings" : ""
-              }`}
+              className={`dock-button ${stateClass} ${action.id === "settings" ? "dock-button-settings" : ""}`}
               disabled={recordBusy}
               title={active ? feedback.message : action.label}
               aria-label={action.label}

@@ -233,7 +233,7 @@ export async function stopDeviceRecording(platform: DevicePlatform, deviceId: st
   return invoke('stop_device_recording', { platform, deviceId });
 }
 
-export type DeviceQuickAction = 'screenshot' | 'toggle_appearance' | 'open_url' | 'shutdown';
+export type DeviceQuickAction = 'screenshot' | 'toggle_appearance' | 'open_url' | 'relaunch_app';
 
 /** Runs a quick action; returns a short result (screenshot path, new appearance) when there is one. */
 export async function deviceQuickAction(
