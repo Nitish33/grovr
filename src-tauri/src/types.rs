@@ -103,6 +103,21 @@ pub struct QuickLinkItem {
     pub pinned: bool,
 }
 
+/// A named app deep link shown inside the simulator/emulator quick bar.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeepLinkItem {
+    pub id: String,
+    #[serde(default = "default_deep_link_platform")]
+    pub platform: String,
+    pub package: String,
+    pub name: String,
+    pub url: String,
+}
+
+fn default_deep_link_platform() -> String {
+    "ios".to_string()
+}
+
 /// Options for the simulator/emulator quick bar (screenshots and screen recordings)
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct QuickBarSettings {
@@ -209,6 +224,9 @@ pub struct AppSettings {
     /// Quick links (pinned first, then by user order)
     #[serde(default)]
     pub quick_links: Vec<QuickLinkItem>,
+    /// App deep links for the simulator/emulator quick bar
+    #[serde(default)]
+    pub deep_links: Vec<DeepLinkItem>,
     /// Quick bar (screenshot / recording) options
     #[serde(default)]
     pub quick_bar: QuickBarSettings,

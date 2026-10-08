@@ -16,7 +16,7 @@ use commands::settings::{
     set_fetch_before_create, set_global_shortcut, set_ide, set_last_used_project,
     set_launch_at_startup, set_onboarding_completed, set_refresh_interval_minutes,
     set_skip_open_ide_confirm, set_theme, set_worktree_memo, set_pinned_devices,
-    set_device_note, set_notes, set_quick_links, set_quick_bar_settings,
+    set_device_note, set_notes, set_quick_links, set_deep_links, set_quick_bar_settings,
 };
 use commands::links::open_link;
 use commands::windows::{open_json_viewer, open_quick_bar_settings};
@@ -155,6 +155,7 @@ pub fn run() {
             set_device_note,
             set_notes,
             set_quick_links,
+            set_deep_links,
             set_quick_bar_settings,
             // Projects
             get_projects,

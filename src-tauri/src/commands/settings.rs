@@ -1,4 +1,4 @@
-use crate::types::{AppSettings, IdeConfig, NoteItem, QuickBarSettings, QuickLinkItem, WorktreeMemo};
+use crate::types::{AppSettings, DeepLinkItem, IdeConfig, NoteItem, QuickBarSettings, QuickLinkItem, WorktreeMemo};
 use tauri::{Manager, State};
 #[cfg(not(target_os = "macos"))]
 use tauri_plugin_autostart::ManagerExt;
@@ -243,6 +243,8 @@ pub fn set_notes(
 const MAX_QUICK_LINKS: usize = 500;
 const MAX_LINK_NAME_CHARS: usize = 100;
 const MAX_LINK_URL_CHARS: usize = 2_000;
+const MAX_DEEP_LINKS: usize = 500;
+const MAX_PACKAGE_CHARS: usize = 200;
 
 /// Replaces the full list of Quick links (pinned first, then by user order).
 /// Entries without a URL are dropped and sizes are capped.
@@ -268,6 +270,37 @@ pub fn set_quick_links(
 
     let mut settings = state.0.lock().map_err(|e| e.to_string())?;
     settings.quick_links = cleaned;
+    save_settings(&app, &settings)
+}
+
+/// Replaces the full list of app deep links used by the quick bar.
+#[tauri::command]
+pub fn set_deep_links(
+    app: tauri::AppHandle,
+    state: State<SettingsState>,
+    links: Vec<DeepLinkItem>,
+) -> Result<(), String> {
+    let cleaned: Vec<DeepLinkItem> = links
+        .into_iter()
+        .filter_map(|link| {
+            let platform = match link.platform.as_str() {
+                "ios" | "android" => link.platform,
+                _ => "ios".to_string(),
+            };
+            let package: String = link.package.trim().chars().take(MAX_PACKAGE_CHARS).collect();
+            let url: String = link.url.trim().chars().take(MAX_LINK_URL_CHARS).collect();
+            if package.is_empty() || url.is_empty() {
+                return None;
+            }
+            let name: String = link.name.trim().chars().take(MAX_LINK_NAME_CHARS).collect();
+            let name = if name.is_empty() { url.clone() } else { name };
+            Some(DeepLinkItem { id: link.id, platform, package, name, url })
+        })
+        .take(MAX_DEEP_LINKS)
+        .collect();
+
+    let mut settings = state.0.lock().map_err(|e| e.to_string())?;
+    settings.deep_links = cleaned;
     save_settings(&app, &settings)
 }
 

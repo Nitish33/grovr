@@ -63,6 +63,14 @@ export interface QuickLink {
   pinned: boolean;
 }
 
+export interface DeepLink {
+  id: string;
+  platform: DevicePlatform;
+  package: string;
+  name: string;
+  url: string;
+}
+
 /** Options for the simulator/emulator quick bar (see src-tauri/src/types.rs) */
 export interface QuickBarSettings {
   shrink_recordings: boolean;
@@ -98,6 +106,7 @@ export interface BackendAppSettings {
   device_notes?: Record<string, string>;
   notes?: Note[];
   quick_links?: QuickLink[];
+  deep_links?: DeepLink[];
   quick_bar?: QuickBarSettings;
 }
 
@@ -128,6 +137,10 @@ export async function launchAndroidEmulator(avdName: string): Promise<void> {
 
 export async function setQuickLinks(links: QuickLink[]): Promise<void> {
   return invoke('set_quick_links', { links });
+}
+
+export async function setDeepLinks(links: DeepLink[]): Promise<void> {
+  return invoke('set_deep_links', { links });
 }
 
 export async function openLink(url: string): Promise<void> {

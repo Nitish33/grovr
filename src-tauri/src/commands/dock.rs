@@ -256,7 +256,7 @@ mod follow {
             // Not "always on top": the bar is kept just above its device window instead (see
             // run_follow_loop), so windows opened from it (logs, settings) can sit above the bar
             .skip_taskbar(true)
-            .resizable(false)
+            .resizable(true)
             .focused(false)
             .visible(false)
             .build()

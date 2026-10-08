@@ -1522,6 +1522,9 @@ html.dock-root #root { background: transparent; }
 }
 .recording-time { @apply font-mono tabular-nums; color: hsl(var(--muted-foreground)); }
 .device-toast-error { color: hsl(var(--destructive)); }
+.dock-shell {
+  @apply flex h-full gap-1 p-0;
+}
 .dock-bar {
   @apply flex flex-col items-center gap-1 h-full p-1 rounded-xl flex-shrink-0;
   background: hsl(var(--card));
@@ -1529,7 +1532,7 @@ html.dock-root #root { background: transparent; }
   border: 1px solid hsl(var(--border));
 }
 .dock-button {
-  @apply w-9 h-9 rounded-lg flex items-center justify-center transition-colors;
+  @apply w-9 h-8 rounded-lg flex items-center justify-center transition-colors;
   color: hsl(var(--muted-foreground));
 }
 .dock-button:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
@@ -1538,12 +1541,112 @@ html.dock-root #root { background: transparent; }
 .dock-button-danger:hover { background: hsl(var(--destructive) / 0.15); color: hsl(var(--destructive)); }
 .dock-button-recording { color: hsl(var(--destructive)); animation: dockRecordingPulse 1.2s ease-in-out infinite; }
 .dock-button:disabled { @apply cursor-default; }
+.dock-button-active { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
 @keyframes dockRecordingPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
 .dock-button-ok { color: hsl(142 70% 45%); }
 .dock-button-error { color: hsl(var(--destructive)); }
+.dock-deeplink-panel {
+  @apply relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl p-2;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+}
+.dock-deeplink-list { @apply flex-1 min-h-0 overflow-y-auto pr-0.5 pb-1; }
+.dock-deeplink-empty { @apply px-2 py-3 text-xs; color: hsl(var(--muted-foreground)); }
+.dock-deeplink-group { @apply mb-2; }
+.dock-deeplink-group-head {
+  @apply sticky top-0 z-10 mb-1 flex w-full items-center justify-between rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-normal;
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+}
+.dock-deeplink-group-head:hover { background: hsl(var(--secondary) / 0.55); color: hsl(var(--foreground)); }
+.dock-deeplink-group-head:focus-visible { @apply outline-none ring-2 ring-ring; }
+.dock-deeplink-group-title { @apply flex min-w-0 items-center gap-1; }
+.dock-deeplink-group-title span { @apply min-w-0 truncate; }
+.dock-deeplink-group-items { @apply flex flex-col gap-0.5; }
+.dock-deeplink-row {
+  @apply grid items-center gap-1 rounded-md p-1;
+  grid-template-columns: minmax(0, 1fr) 1.75rem 1.75rem;
+}
+.dock-deeplink-row:hover { background: hsl(var(--secondary) / 0.7); }
+.dock-deeplink-open { @apply min-w-0 rounded px-1.5 py-1 text-left; }
+.dock-deeplink-open:focus-visible,
+.dock-deeplink-icon:focus-visible,
+.dock-deeplink-add:focus-visible,
+.dock-deeplink-input:focus-visible,
+.dock-deeplink-combo-button:focus-visible,
+.dock-deeplink-combo-option:focus-visible { @apply outline-none ring-2 ring-ring; }
+.dock-deeplink-name { @apply block truncate text-xs font-medium; color: hsl(var(--foreground)); }
+.dock-deeplink-url { @apply block truncate text-[10px]; color: hsl(var(--muted-foreground)); }
+.dock-deeplink-icon {
+  @apply flex h-7 w-7 items-center justify-center rounded-md transition-colors;
+  color: hsl(var(--muted-foreground));
+}
+.dock-deeplink-icon:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.dock-deeplink-actions {
+  @apply flex-shrink-0 border-t pt-2;
+  border-color: hsl(var(--border));
+}
+.dock-deeplink-form {
+  @apply absolute inset-x-2 bottom-2 z-40 flex flex-col gap-1.5 rounded-lg border p-2 shadow-xl;
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+}
+.dock-deeplink-form-backdrop {
+  @apply absolute inset-0 z-30 rounded-xl;
+  background: hsl(var(--background) / 0.58);
+}
+.dock-deeplink-form-head {
+  @apply flex items-center justify-between px-0.5 pb-1 text-xs font-semibold;
+  color: hsl(var(--foreground));
+}
+.dock-deeplink-form-head button {
+  @apply rounded px-1.5 py-0.5 text-[10px] font-medium;
+  color: hsl(var(--muted-foreground));
+}
+.dock-deeplink-form-head button:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.dock-deeplink-form-head button:focus-visible { @apply outline-none ring-2 ring-ring; }
+.dock-deeplink-submit {
+  @apply mt-0.5;
+}
+.dock-deeplink-combo { @apply relative; }
+.dock-deeplink-combo-button {
+  @apply flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-md border px-2 text-left text-xs;
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.dock-deeplink-combo-button span { @apply min-w-0 truncate; }
+.dock-deeplink-combo-menu {
+  @apply absolute bottom-full left-0 right-0 z-50 mb-1 max-h-36 overflow-y-auto rounded-md border p-1 shadow-2xl;
+  background: hsl(var(--card));
+  border-color: hsl(var(--border));
+  color: hsl(var(--card-foreground));
+  opacity: 1;
+}
+.dock-deeplink-combo-empty { @apply px-2 py-1.5 text-xs; color: hsl(var(--muted-foreground)); }
+.dock-deeplink-combo-option {
+  @apply block w-full min-w-0 truncate rounded px-2 py-1.5 text-left text-xs transition-colors;
+  color: hsl(var(--popover-foreground));
+}
+.dock-deeplink-combo-option:hover,
+.dock-deeplink-combo-option-active { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.dock-deeplink-input {
+  @apply h-8 min-w-0 rounded-md border px-2 text-xs;
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.dock-deeplink-add {
+  @apply flex h-8 p-4 items-center justify-center gap-1 rounded-md text-xs font-medium transition-colors;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.dock-deeplink-add:hover { opacity: 0.9; }
 
 /* Quick bar settings window */
 .qb-layout { @apply grid h-full; grid-template-columns: 200px minmax(0, 1fr); }
