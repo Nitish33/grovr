@@ -50,7 +50,7 @@ fn validate(platform: &str, device_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn percent_encode(value: &str) -> String {
+pub(crate) fn percent_encode(value: &str) -> String {
     value
         .bytes()
         .map(|b| match b {
@@ -785,7 +785,7 @@ pub async fn open_running_device_docks(app: tauri::AppHandle) -> Result<usize, S
 
 // ============ Quick actions ============
 
-fn android_serial(avd_name: &str) -> Result<String, String> {
+pub(crate) fn android_serial(avd_name: &str) -> Result<String, String> {
     running_avds()
         .into_iter()
         .find(|(_, name)| name == avd_name)
@@ -793,7 +793,7 @@ fn android_serial(avd_name: &str) -> Result<String, String> {
         .ok_or_else(|| "Emulator is not running".to_string())
 }
 
-fn run(command: &mut Command, what: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn run(command: &mut Command, what: &str) -> Result<Vec<u8>, String> {
     let output = command.output().map_err(|e| format!("Failed to {}: {}", what, e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -803,11 +803,11 @@ fn run(command: &mut Command, what: &str) -> Result<Vec<u8>, String> {
     Ok(output.stdout)
 }
 
-fn simctl(args: &[&str], what: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn simctl(args: &[&str], what: &str) -> Result<Vec<u8>, String> {
     run(Command::new("xcrun").arg("simctl").args(args), what)
 }
 
-fn adb(serial: &str, args: &[&str], what: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn adb(serial: &str, args: &[&str], what: &str) -> Result<Vec<u8>, String> {
     run(Command::new(adb_binary()).args(["-s", serial]).args(args), what)
 }
 
@@ -838,7 +838,7 @@ fn android_package_from_focus_line(line: &str) -> Option<String> {
     None
 }
 
-fn current_android_package(serial: &str) -> Result<String, String> {
+pub(crate) fn current_android_package(serial: &str) -> Result<String, String> {
     let window = adb(serial, &["shell", "dumpsys", "window"], "read the focused Android app")?;
     let window_text = String::from_utf8_lossy(&window);
     for line in window_text.lines() {
@@ -893,7 +893,7 @@ fn bundle_id_from_launchctl(output: &[u8]) -> Option<String> {
     bundle_ids.into_iter().next()
 }
 
-fn current_ios_bundle_id(device_id: &str) -> Result<String, String> {
+pub(crate) fn current_ios_bundle_id(device_id: &str) -> Result<String, String> {
     let uid = host_uid()?;
     let user_domain = format!("user/{}", uid);
     if let Ok(output) = simctl(

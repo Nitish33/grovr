@@ -71,6 +71,33 @@ export interface DeepLink {
   url: string;
 }
 
+export interface CurrentRunningApp {
+  platform: DevicePlatform;
+  device_id: string;
+  device_name: string;
+  app_id: string;
+  app_name: string;
+}
+
+export interface InstalledApp {
+  id: string;
+  name: string;
+}
+
+export interface PermissionAction {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface AppPermission {
+  id: string;
+  label: string;
+  description: string;
+  status: string;
+  actions: PermissionAction[];
+}
+
 /** Options for the simulator/emulator quick bar (see src-tauri/src/types.rs) */
 export interface QuickBarSettings {
   shrink_recordings: boolean;
@@ -133,6 +160,32 @@ export async function launchIosSimulator(udid: string): Promise<void> {
 
 export async function launchAndroidEmulator(avdName: string): Promise<void> {
   return invoke('launch_android_emulator', { avdName });
+}
+
+export async function currentRunningApp(platform: DevicePlatform, deviceId?: string): Promise<CurrentRunningApp> {
+  return invoke('current_running_app', { platform, deviceId });
+}
+
+export async function listInstalledApps(platform: DevicePlatform, deviceId: string): Promise<InstalledApp[]> {
+  return invoke('list_installed_apps', { platform, deviceId });
+}
+
+export async function listAppPermissions(
+  platform: DevicePlatform,
+  deviceId: string,
+  appId: string
+): Promise<AppPermission[]> {
+  return invoke('list_app_permissions', { platform, deviceId, appId });
+}
+
+export async function setAppPermission(
+  platform: DevicePlatform,
+  deviceId: string,
+  appId: string,
+  permissionId: string,
+  action: string
+): Promise<AppPermission[]> {
+  return invoke('set_app_permission', { platform, deviceId, appId, permissionId, action });
 }
 
 export async function setQuickLinks(links: QuickLink[]): Promise<void> {

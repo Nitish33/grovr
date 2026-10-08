@@ -32,6 +32,7 @@ use commands::logs::{open_log_window, start_log_stream, save_log_snapshot, list_
 use commands::devices::{
     list_ios_simulators, list_android_emulators, launch_ios_simulator, launch_android_emulator,
 };
+use commands::permissions::{current_running_app, list_app_permissions, list_installed_apps, set_app_permission};
 use commands::projects::{add_project, get_projects, remove_project, reorder_projects, update_project};
 use commands::git::{
     get_worktrees, create_worktree, create_worktree_existing_branch, remove_worktree,
@@ -207,6 +208,10 @@ pub fn run() {
             list_android_emulators,
             launch_ios_simulator,
             launch_android_emulator,
+            current_running_app,
+            list_installed_apps,
+            list_app_permissions,
+            set_app_permission,
             // Links
             open_link,
             // Windows

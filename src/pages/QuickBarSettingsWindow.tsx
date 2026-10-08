@@ -11,24 +11,28 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Shield,
   Trash2,
   Video,
   type LucideIcon,
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { useAppTheme } from '@/hooks/useAppTheme';
+import { useCurrentRunningApp } from '@/hooks/useCurrentRunningApp';
+import { useInstalledApps } from '@/hooks/useInstalledApps';
 import { useQuickBarSettings } from '@/hooks/useQuickBarSettings';
 import { useRecordings } from '@/hooks/useRecordings';
 import * as api from '@/lib/api';
-import type { DeepLink, DevicePlatform, QuickBarSettings, RecordingFile } from '@/lib/api';
+import type { AppPermission, DeepLink, DevicePlatform, InstalledApp, QuickBarSettings, RecordingFile } from '@/lib/api';
 import { formatSize } from '@/lib/format';
 
-type Section = 'screenshot' | 'recording' | 'deeplinks';
+type Section = 'screenshot' | 'recording' | 'deeplinks' | 'permissions';
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'screenshot', label: 'Screenshot', icon: Camera },
   { id: 'recording', label: 'Recording', icon: Video },
   { id: 'deeplinks', label: 'Deep links', icon: Link },
+  { id: 'permissions', label: 'Permissions', icon: Shield },
 ];
 
 const FPS_OPTIONS = [
@@ -61,6 +65,14 @@ const PLATFORM_OPTIONS: { value: DevicePlatform; label: string }[] = [
   { value: 'ios', label: 'Simulator' },
   { value: 'android', label: 'Emulator' },
 ];
+
+function readSettingsContext() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    platform: params.get('platform') === 'android' ? 'android' as DevicePlatform : 'ios' as DevicePlatform,
+    deviceId: params.get('id') ?? undefined,
+  };
+}
 
 function qualityLabel(crf: number): string {
   if (crf <= 22) return 'High quality';
@@ -725,10 +737,239 @@ function DeepLinksSection() {
   );
 }
 
+function statusLabel(status: string) {
+  switch (status) {
+    case 'granted':
+      return 'Granted';
+    case 'denied':
+      return 'Denied';
+    case 'while_in_use':
+      return 'While in use';
+    case 'limited':
+      return 'Limited';
+    case 'partial':
+      return 'Partial';
+    case 'not_requested':
+      return 'Not requested';
+    case 'unsupported':
+      return 'Unsupported';
+    default:
+      return 'Unknown';
+  }
+}
+
+function PermissionsSection({
+  initialPlatform,
+  initialDeviceId,
+}: {
+  initialPlatform: DevicePlatform;
+  initialDeviceId?: string;
+}) {
+  const [platform, setPlatform] = useState<DevicePlatform>(initialPlatform);
+  const deviceId = platform === initialPlatform ? initialDeviceId : undefined;
+  const { app: currentApp, loading: appLoading, error: appError, refresh: refreshApp } = useCurrentRunningApp(platform, deviceId);
+  const resolvedDeviceId = currentApp?.device_id ?? deviceId;
+  const {
+    apps,
+    device,
+    loading: appsLoading,
+    error: appsError,
+    refresh: refreshApps,
+  } = useInstalledApps(platform, resolvedDeviceId);
+  const [selectedAppId, setSelectedAppId] = useState('');
+  const [permissions, setPermissions] = useState<AppPermission[]>([]);
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const appOptions = useMemo<InstalledApp[]>(() => {
+    const merged = [...apps];
+    if (currentApp && !merged.some((item) => item.id === currentApp.app_id)) {
+      merged.unshift({ id: currentApp.app_id, name: currentApp.app_name });
+    }
+    return merged;
+  }, [apps, currentApp]);
+  const selectedApp = appOptions.find((item) => item.id === selectedAppId) ?? null;
+  const targetDeviceId = currentApp?.device_id ?? device?.id ?? deviceId;
+  const targetDeviceName = currentApp?.device_name ?? device?.name;
+
+  const refreshPermissions = async () => {
+    if (!targetDeviceId || !selectedAppId) {
+      setPermissions([]);
+      return;
+    }
+    setPermissionsLoading(true);
+    setError(null);
+    try {
+      setPermissions(await api.listAppPermissions(platform, targetDeviceId, selectedAppId));
+    } catch (err) {
+      setError(String(err));
+      setPermissions([]);
+    } finally {
+      setPermissionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshPermissions();
+  }, [platform, targetDeviceId, selectedAppId]);
+
+  useEffect(() => {
+    setSelectedAppId((current) => {
+      if (current && appOptions.some((item) => item.id === current)) return current;
+      return currentApp?.app_id ?? appOptions[0]?.id ?? '';
+    });
+  }, [appOptions, currentApp?.app_id]);
+
+  useEffect(() => {
+    setSelectedAppId('');
+    setPermissions([]);
+  }, [platform]);
+
+  const applyPermission = async (permission: AppPermission, action: string) => {
+    if (!targetDeviceId || !selectedAppId) return;
+    const busyId = `${permission.id}:${action}`;
+    setBusyAction(busyId);
+    setError(null);
+    try {
+      const next = await api.setAppPermission(platform, targetDeviceId, selectedAppId, permission.id, action);
+      setPermissions(next);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  return (
+    <div className="qb-section">
+      <div className="qb-section-title-row">
+        <div>
+          <h2 className="qb-heading">Permissions</h2>
+          <div className="qb-permission-app">
+            Permission for {selectedApp ? <strong>{selectedApp.name}</strong> : 'current app'}
+          </div>
+        </div>
+        <div className="qb-platform-tabs" role="tablist" aria-label="Permission platform">
+          {PLATFORM_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={platform === option.value}
+              className={`qb-platform-tab ${platform === option.value ? 'qb-platform-tab-active' : ''}`}
+              onClick={() => setPlatform(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="qb-list-actions">
+        <button className="json-button" type="button" onClick={() => void refreshApp()} disabled={appLoading}>
+          <RefreshCw size={12} className={appLoading ? 'animate-spin' : ''} />
+          <span>Refresh app</span>
+        </button>
+        <button className="json-button" type="button" onClick={() => void refreshApps()} disabled={appsLoading}>
+          <RefreshCw size={12} className={appsLoading ? 'animate-spin' : ''} />
+          <span>Refresh apps</span>
+        </button>
+        <button
+          className="json-button"
+          type="button"
+          onClick={() => void refreshPermissions()}
+          disabled={!targetDeviceId || !selectedAppId || permissionsLoading}
+        >
+          <RefreshCw size={12} className={permissionsLoading ? 'animate-spin' : ''} />
+          <span>Refresh status</span>
+        </button>
+      </div>
+
+      {targetDeviceId && (
+        <div className="qb-card qb-permission-selector">
+          <select
+            className="qb-input qb-deeplink-package-select"
+            value={selectedAppId}
+            onChange={(event) => setSelectedAppId(event.target.value)}
+            disabled={appOptions.length === 0 || appsLoading}
+            aria-label="Permission app"
+          >
+            {appOptions.length === 0 ? (
+              <option value="">{appsLoading ? 'Loading apps...' : 'No apps found'}</option>
+            ) : (
+              appOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name === item.id ? item.id : `${item.name} (${item.id})`}
+                </option>
+              ))
+            )}
+          </select>
+          <div className="qb-hint">
+            {targetDeviceName ?? targetDeviceId} · {selectedAppId || 'No app selected'}
+          </div>
+        </div>
+      )}
+
+      {(appError || appsError || error) && (
+        <div className="qb-notice" role="alert">
+          {appError || appsError || error}
+        </div>
+      )}
+
+      {!targetDeviceId && !appLoading && !appsLoading && !appError && !appsError && (
+        <div className="devices-message">No current app found on a running {platform === 'ios' ? 'simulator' : 'emulator'}.</div>
+      )}
+
+      {targetDeviceId && selectedAppId && (
+        <div className="qb-permission-list">
+          {permissions.map((permission) => (
+            <div key={permission.id} className="qb-permission-row">
+              <div className="qb-permission-main">
+                <div className="qb-permission-title">{permission.label}</div>
+                <div className="qb-permission-description">{permission.description}</div>
+              </div>
+              <span className={`qb-permission-status qb-permission-status-${permission.status}`}>
+                {statusLabel(permission.status)}
+              </span>
+              <div className="qb-permission-actions">
+                {permission.actions.map((action) => {
+                  const busy = busyAction === `${permission.id}:${action.id}`;
+                  const selected =
+                    (action.id === 'grant' && permission.status === 'granted') ||
+                    (action.id === 'deny' && permission.status === 'denied') ||
+                    (action.id === 'while_in_use' && permission.status === 'while_in_use');
+                  return (
+                    <button
+                      key={action.id}
+                      className={`json-button ${selected ? 'qb-permission-action-active' : ''}`}
+                      type="button"
+                      disabled={!action.enabled || busyAction !== null}
+                      onClick={() => void applyPermission(permission, action.id)}
+                      title={action.enabled ? action.label : `${action.label} is not scriptable here`}
+                    >
+                      {busy && <RefreshCw size={12} className="animate-spin" />}
+                      <span>{action.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {!permissionsLoading && permissions.length === 0 && (
+            <div className="devices-message">No managed permissions declared by this app.</div>
+          )}
+          {permissionsLoading && <div className="devices-message">Loading permission status...</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Options for the quick bar's screenshot and recording actions, and the saved recordings. */
 export function QuickBarSettingsWindow() {
   useAppTheme();
   const { settings, loaded, update } = useQuickBarSettings();
+  const settingsContext = useMemo(readSettingsContext, []);
   const [section, setSection] = useState<Section>('recording');
 
   useEffect(() => {
@@ -754,6 +995,9 @@ export function QuickBarSettingsWindow() {
         {loaded && section === 'screenshot' && <ScreenshotSection settings={settings} update={update} />}
         {loaded && section === 'recording' && <RecordingSection settings={settings} update={update} />}
         {loaded && section === 'deeplinks' && <DeepLinksSection />}
+        {loaded && section === 'permissions' && (
+          <PermissionsSection initialPlatform={settingsContext.platform} initialDeviceId={settingsContext.deviceId} />
+        )}
       </main>
     </div>
   );

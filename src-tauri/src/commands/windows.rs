@@ -30,12 +30,29 @@ pub async fn open_json_viewer(app: tauri::AppHandle) -> Result<(), String> {
 
 const QUICK_BAR_SETTINGS_LABEL: &str = "quickbar-settings";
 
+fn quick_bar_settings_url(window: &tauri::WebviewWindow) -> String {
+    let mut url = "index.html?view=quickbar-settings".to_string();
+    if let Ok(source) = window.url() {
+        for key in ["platform", "id", "name"] {
+            if let Some(value) = source.query_pairs().find_map(|(query_key, value)| (query_key == key).then_some(value)) {
+                url.push('&');
+                url.push_str(key);
+                url.push('=');
+                url.push_str(&super::dock::percent_encode(&value));
+            }
+        }
+    }
+    url
+}
+
 /// Opens the quick bar settings (screenshot / recording options and saved recordings) to the
 /// right of the quick bar that asked for it, or focuses it (moving it there) if already open.
 #[tauri::command]
 pub async fn open_quick_bar_settings(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    let settings_url = quick_bar_settings_url(&window);
     if let Some(existing) = app.get_webview_window(QUICK_BAR_SETTINGS_LABEL) {
         let _ = existing.unminimize();
+        let _ = existing.eval(&format!("window.location.replace('{}')", settings_url));
         super::dock::place_beside_bar(&existing, &window);
         existing.show().map_err(|e| e.to_string())?;
         existing.set_focus().map_err(|e| e.to_string())?;
@@ -46,7 +63,7 @@ pub async fn open_quick_bar_settings(app: tauri::AppHandle, window: tauri::Webvi
     let settings = WebviewWindowBuilder::new(
         &app,
         QUICK_BAR_SETTINGS_LABEL,
-        WebviewUrl::App("index.html?view=quickbar-settings".into()),
+        WebviewUrl::App(settings_url.into()),
     )
     .title("Quick bar settings")
     .inner_size(880.0, 640.0)
