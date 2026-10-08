@@ -1,19 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { Camera, Copy, FolderOpen, Play, RefreshCw, Trash2, Video, type LucideIcon } from 'lucide-react';
+import {
+  Camera,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FolderOpen,
+  Link,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Video,
+  type LucideIcon,
+} from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useQuickBarSettings } from '@/hooks/useQuickBarSettings';
 import { useRecordings } from '@/hooks/useRecordings';
 import * as api from '@/lib/api';
-import type { QuickBarSettings, RecordingFile } from '@/lib/api';
+import type { DeepLink, DevicePlatform, QuickBarSettings, RecordingFile } from '@/lib/api';
 import { formatSize } from '@/lib/format';
 
-type Section = 'screenshot' | 'recording';
+type Section = 'screenshot' | 'recording' | 'deeplinks';
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'screenshot', label: 'Screenshot', icon: Camera },
   { id: 'recording', label: 'Recording', icon: Video },
+  { id: 'deeplinks', label: 'Deep links', icon: Link },
 ];
 
 const FPS_OPTIONS = [
@@ -42,6 +57,10 @@ const KEEP_OPTIONS = [
 
 const CRF_MIN = 18;
 const CRF_MAX = 36;
+const PLATFORM_OPTIONS: { value: DevicePlatform; label: string }[] = [
+  { value: 'ios', label: 'Simulator' },
+  { value: 'android', label: 'Emulator' },
+];
 
 function qualityLabel(crf: number): string {
   if (crf <= 22) return 'High quality';
@@ -386,6 +405,326 @@ function RecordingSection({
   );
 }
 
+function normalizeDeepLinks(links: DeepLink[] = []): DeepLink[] {
+  return links.map((link) => ({ ...link, platform: link.platform ?? 'ios' }));
+}
+
+function DeepLinksSection() {
+  const [links, setLinks] = useState<DeepLink[]>([]);
+  const [platform, setPlatform] = useState<DevicePlatform>('ios');
+  const [apps, setApps] = useState<string[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [appsError, setAppsError] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ package: '', name: '', url: '' });
+  const [editing, setEditing] = useState<DeepLink | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const visibleLinks = links.filter((link) => link.platform === platform);
+  const packageOptions = useMemo(
+    () => [
+      ...new Set([
+        ...apps,
+        ...links.filter((link) => link.platform === platform).map((link) => link.package),
+      ]),
+    ].filter(Boolean),
+    [apps, links, platform],
+  );
+  const groupedLinks = visibleLinks.reduce<Record<string, DeepLink[]>>((groups, link) => {
+    const key = link.package || 'App';
+    groups[key] = [...(groups[key] ?? []), link];
+    return groups;
+  }, {});
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((settings) => setLinks(normalizeDeepLinks(settings.deep_links ?? [])))
+      .catch((err) => {
+        console.error('Failed to load deep links:', err);
+        setError('Could not load saved deep links.');
+      });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAppsLoading(true);
+    setAppsError(null);
+    setApps([]);
+
+    const loadApps = async () => {
+      const devices = platform === 'ios' ? await api.listIosSimulators() : await api.listAndroidEmulators();
+      const runningDevices = devices.filter((device) => {
+        const state = (device.state ?? '').toLowerCase();
+        return state.includes('booted') || state.includes('running');
+      });
+      const lists = await Promise.all(
+        runningDevices.map((device) => api.listUserApps(platform, device.id).catch(() => [] as string[])),
+      );
+      const nextApps = [...new Set(lists.flat().filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      if (!cancelled) setApps(nextApps);
+    };
+
+    loadApps()
+      .catch((err) => {
+        console.error('Failed to load apps for deep links:', err);
+        if (!cancelled) setAppsError('Could not load apps from running devices.');
+      })
+      .finally(() => {
+        if (!cancelled) setAppsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [platform]);
+
+  useEffect(() => {
+    setDraft((current) => {
+      if (current.package && packageOptions.includes(current.package)) return current;
+      return { ...current, package: packageOptions[0] ?? '' };
+    });
+  }, [packageOptions]);
+
+  const saveLinks = async (next: DeepLink[]) => {
+    setLinks(next);
+    setError(null);
+    try {
+      await api.setDeepLinks(next);
+    } catch (err) {
+      console.error('Failed to save deep links:', err);
+      setError('Could not save deep links.');
+    }
+  };
+
+  const addDeepLink = () => {
+    const packageName = draft.package.trim();
+    const url = draft.url.trim();
+    const name = draft.name.trim() || url;
+    if (!packageName || !url) {
+      setError('Package/app and link are required.');
+      return;
+    }
+
+    const next = [
+      ...links,
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        platform,
+        package: packageName,
+        name,
+        url,
+      },
+    ];
+    setDraft({ package: packageName, name: '', url: '' });
+    setExpanded((current) => new Set(current).add(packageName));
+    void saveLinks(next);
+  };
+
+  const removeDeepLink = (id: string) => {
+    void saveLinks(links.filter((link) => link.id !== id));
+  };
+
+  const startEdit = (link: DeepLink) => {
+    setEditing({ ...link });
+    setExpanded((current) => new Set(current).add(link.package));
+    setError(null);
+  };
+
+  const saveEdit = () => {
+    if (!editing) return;
+    const packageName = editing.package.trim();
+    const url = editing.url.trim();
+    const name = editing.name.trim() || url;
+    if (!packageName || !url) {
+      setError('Package/app and link are required.');
+      return;
+    }
+
+    const next = links.map((link) =>
+      link.id === editing.id ? { ...editing, package: packageName, name, url } : link,
+    );
+    setEditing(null);
+    setExpanded((current) => new Set(current).add(packageName));
+    void saveLinks(next);
+  };
+
+  const toggleGroup = (packageName: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(packageName)) {
+        next.delete(packageName);
+      } else {
+        next.add(packageName);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="qb-section">
+      <div className="qb-section-title-row">
+        <h2 className="qb-heading">Deep links</h2>
+        <div className="qb-platform-tabs" role="tablist" aria-label="Deep link platform">
+          {PLATFORM_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={platform === option.value}
+              className={`qb-platform-tab ${platform === option.value ? 'qb-platform-tab-active' : ''}`}
+              onClick={() => setPlatform(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="qb-card qb-deeplink-editor">
+        <div className="qb-deeplink-grid">
+          <select
+            className="qb-input qb-deeplink-package-select"
+            value={draft.package}
+            disabled={packageOptions.length === 0}
+            onChange={(e) => setDraft((current) => ({ ...current, package: e.target.value }))}
+            aria-label="Package or app"
+          >
+            {packageOptions.length === 0 ? (
+              <option value="">{appsLoading ? 'Loading apps...' : 'No apps found'}</option>
+            ) : (
+              packageOptions.map((app) => (
+                <option key={app} value={app}>
+                  {app}
+                </option>
+              ))
+            )}
+          </select>
+          <input
+            className="qb-input"
+            value={draft.name}
+            onChange={(e) => setDraft((current) => ({ ...current, name: e.target.value }))}
+            placeholder="Name"
+            aria-label="Deep link name"
+          />
+          <input
+            className="qb-input qb-deeplink-url-input"
+            value={draft.url}
+            onChange={(e) => setDraft((current) => ({ ...current, url: e.target.value }))}
+            placeholder="Link"
+            aria-label="Deep link URL"
+          />
+          <button className="json-button qb-add-button" type="button" onClick={addDeepLink}>
+            <Plus size={14} />
+            <span>Add</span>
+          </button>
+        </div>
+        {error && (
+          <div className="qb-notice" role="alert">
+            {error}
+          </div>
+        )}
+        {appsError && (
+          <div className="qb-notice" role="alert">
+            {appsError}
+          </div>
+        )}
+      </div>
+
+      {Object.keys(groupedLinks).length === 0 ? (
+        <div className="devices-message">No deep links saved for {platform === 'ios' ? 'simulators' : 'emulators'}.</div>
+      ) : (
+        <div className="qb-deeplink-groups">
+          {Object.entries(groupedLinks).map(([packageName, packageLinks]) => {
+            const isExpanded = expanded.has(packageName);
+            return (
+              <section key={packageName} className="qb-deeplink-group">
+                <button className="qb-deeplink-group-head" type="button" onClick={() => toggleGroup(packageName)}>
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span>{packageName}</span>
+                  <strong>{packageLinks.length}</strong>
+                </button>
+                {isExpanded && (
+                  <ul className="qb-deeplink-list">
+                    {packageLinks.map((link) => (
+                      <li key={link.id} className="qb-deeplink-row">
+                        {editing?.id === link.id ? (
+                          <div className="qb-deeplink-edit">
+                            <select
+                              className="qb-input qb-deeplink-package-select"
+                              value={editing.package}
+                              onChange={(e) => setEditing((current) => current && { ...current, package: e.target.value })}
+                              aria-label="Package or app"
+                            >
+                              {packageOptions.map((app) => (
+                                <option key={app} value={app}>
+                                  {app}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              className="qb-input"
+                              value={editing.name}
+                              onChange={(e) => setEditing((current) => current && { ...current, name: e.target.value })}
+                              placeholder="Name"
+                              aria-label="Deep link name"
+                            />
+                            <input
+                              className="qb-input qb-deeplink-edit-url"
+                              value={editing.url}
+                              onChange={(e) => setEditing((current) => current && { ...current, url: e.target.value })}
+                              placeholder="Link"
+                              aria-label="Deep link URL"
+                            />
+                            <button className="json-button" type="button" onClick={saveEdit}>
+                              Save
+                            </button>
+                            <button className="json-button" type="button" onClick={() => setEditing(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="qb-deeplink-main">
+                              <div className="qb-deeplink-name">{link.name}</div>
+                              <div className="qb-deeplink-url" title={link.url}>
+                                {link.url}
+                              </div>
+                            </div>
+                            <div className="qb-deeplink-actions">
+                              <button
+                                className="json-button"
+                                type="button"
+                                onClick={() => startEdit(link)}
+                                aria-label={`Edit ${link.name}`}
+                                title="Edit"
+                              >
+                                <Pencil size={12} />
+                              </button>
+                              <button
+                                className="json-button"
+                                type="button"
+                                onClick={() => removeDeepLink(link.id)}
+                                aria-label={`Delete ${link.name}`}
+                                title="Delete"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Options for the quick bar's screenshot and recording actions, and the saved recordings. */
 export function QuickBarSettingsWindow() {
   useAppTheme();
@@ -414,6 +753,7 @@ export function QuickBarSettingsWindow() {
       <main className="qb-content">
         {loaded && section === 'screenshot' && <ScreenshotSection settings={settings} update={update} />}
         {loaded && section === 'recording' && <RecordingSection settings={settings} update={update} />}
+        {loaded && section === 'deeplinks' && <DeepLinksSection />}
       </main>
     </div>
   );
