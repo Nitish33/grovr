@@ -510,7 +510,15 @@ export function DockWindow() {
 
   const handleClick = async (action: DockAction) => {
     if (action.selfReporting) {
-      await action.run();
+      try {
+        await action.run();
+      } catch (err) {
+        const message = String(err);
+        void api.showDeviceToast(message, "error").catch((toastErr) => console.error("Failed to show the toast:", toastErr));
+        setFeedback({ id: action.id, ok: false, message });
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setFeedback(null), FEEDBACK_MS);
+      }
       return;
     }
     let result: { ok: boolean; message: string };

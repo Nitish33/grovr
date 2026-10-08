@@ -55,7 +55,7 @@ pub async fn open_quick_bar_settings(app: tauri::AppHandle, window: tauri::Webvi
         let _ = existing.eval(&format!("window.location.replace('{}')", settings_url));
         super::dock::place_beside_bar(&existing, &window);
         existing.show().map_err(|e| e.to_string())?;
-        existing.set_focus().map_err(|e| e.to_string())?;
+        let _ = existing.set_focus();
         return Ok(());
     }
 
@@ -76,5 +76,6 @@ pub async fn open_quick_bar_settings(app: tauri::AppHandle, window: tauri::Webvi
 
     super::dock::place_beside_bar(&settings, &window);
     settings.show().map_err(|e| e.to_string())?;
-    settings.set_focus().map_err(|e| e.to_string())
+    let _ = settings.set_focus();
+    Ok(())
 }

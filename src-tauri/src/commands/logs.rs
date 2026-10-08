@@ -75,6 +75,7 @@ fn validate(platform: &str, device_id: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn open_log_window(
     app: tauri::AppHandle,
+    caller: tauri::WebviewWindow,
     platform: String,
     device_id: String,
     device_name: String,
@@ -84,8 +85,9 @@ pub async fn open_log_window(
 
     if let Some(window) = app.get_webview_window(&label) {
         let _ = window.unminimize();
+        super::dock::place_beside_bar(&window, &caller);
         window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        let _ = window.set_focus();
         return Ok(());
     }
 
@@ -102,8 +104,13 @@ pub async fn open_log_window(
         .min_inner_size(640.0, 400.0)
         .resizable(true)
         .center()
+        .visible(false)
         .build()
         .map_err(|e| e.to_string())?;
+
+    super::dock::place_beside_bar(&window, &caller);
+    window.show().map_err(|e| e.to_string())?;
+    let _ = window.set_focus();
 
     // Closing the window must not leave the log process running
     let handle = app.clone();
