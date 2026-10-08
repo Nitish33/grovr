@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Mutex;
+use tauri::Manager;
 
 const DOCK_WIDTH: f64 = 48.0;
 const DOCK_HEIGHT: f64 = 292.0;
@@ -40,6 +41,15 @@ fn dock_label(platform: &str, device_id: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
     format!("dock-{}-{}", platform, id)
+}
+
+pub(crate) fn device_rect(app: &tauri::AppHandle, platform: &str, device_id: &str) -> Option<(f64, f64, f64, f64)> {
+    let label = dock_label(platform, device_id);
+    app.state::<DockState>()
+        .device_rects
+        .lock()
+        .ok()
+        .and_then(|rects| rects.get(&label).copied())
 }
 
 fn validate(platform: &str, device_id: &str) -> Result<(), String> {

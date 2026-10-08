@@ -3,14 +3,19 @@
 //! Videos go to a temp folder (cleaned by the OS, and by us after 24 hours); the caller gets
 //! the file path to hand to whoever needs the video.
 
+// The objc crate's macros check a cfg that this crate doesn't declare.
+#![allow(unexpected_cfgs, deprecated)]
+
 use super::devices::{adb_binary, running_avds};
+use super::dock;
 use super::settings::SettingsState;
 use crate::types::QuickBarSettings;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 use tauri::Manager;
 
@@ -41,6 +46,104 @@ struct ActiveRecording {
     started_at: u64,
     /// Android: the adb serial and the file on the device that is pulled when finished
     android: Option<(String, String)>,
+    touch_capture: Option<TouchCapture>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TouchSample {
+    time: f64,
+    x_ratio: f64,
+    y_ratio: f64,
+}
+
+struct TouchCapture {
+    stop: Arc<AtomicBool>,
+    samples: Arc<Mutex<Vec<TouchSample>>>,
+    calibration: TouchCalibration,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+struct TouchCalibration {
+    aspect: Option<f64>,
+    y_bias: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ScreenMetrics {
+    width: f64,
+    height: f64,
+}
+
+impl ScreenMetrics {
+    fn aspect(self) -> f64 {
+        self.width / self.height
+    }
+}
+
+fn screen_metrics(platform: &str, device_id: &str) -> Option<ScreenMetrics> {
+    if platform == "ios" {
+        let path = std::env::temp_dir().join(format!("grovr-screen-aspect-{}.png", std::process::id()));
+        let status = Command::new("xcrun")
+            .args(["simctl", "io", device_id, "screenshot"])
+            .arg(&path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()?;
+        if !status.success() {
+            let _ = std::fs::remove_file(&path);
+            return None;
+        }
+        let output = Command::new("sips")
+            .args(["-g", "pixelWidth", "-g", "pixelHeight"])
+            .arg(&path)
+            .output()
+            .ok()?;
+        let _ = std::fs::remove_file(&path);
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut width = None;
+        let mut height = None;
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some(value) = trimmed.strip_prefix("pixelWidth:") {
+                width = value.trim().parse::<f64>().ok();
+            } else if let Some(value) = trimmed.strip_prefix("pixelHeight:") {
+                height = value.trim().parse::<f64>().ok();
+            }
+        }
+        return width
+            .zip(height)
+            .filter(|(w, h)| *w > 0.0 && *h > 0.0)
+            .map(|(width, height)| ScreenMetrics { width, height });
+    }
+
+    let serial = android_serial(device_id).ok()?;
+    let output = Command::new(adb_binary())
+        .args(["-s", &serial, "shell", "wm", "size"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let size = text.split_whitespace().find(|part| part.contains('x'))?;
+    let (width, height) = size.split_once('x')?;
+    let width = width.trim().parse::<f64>().ok()?;
+    let height = height.trim().parse::<f64>().ok()?;
+    (width > 0.0 && height > 0.0).then_some(ScreenMetrics { width, height })
+}
+
+fn content_rect(rect: (f64, f64, f64, f64), calibration: TouchCalibration) -> (f64, f64, f64, f64) {
+    let Some(aspect) = calibration.aspect.filter(|value| *value > 0.0) else {
+        return rect;
+    };
+    let (x, y, w, h) = rect;
+    let window_aspect = w / h;
+    if window_aspect > aspect {
+        let content_w = h * aspect;
+        (x + (w - content_w) / 2.0, y, content_w, h)
+    } else {
+        let content_h = w / aspect;
+        (x, y + (h - content_h) / 2.0, w, content_h)
+    }
 }
 
 #[derive(Default)]
@@ -141,28 +244,184 @@ fn find_ffmpeg() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+#[cfg(target_os = "macos")]
+fn mouse_location() -> Option<(f64, f64)> {
+    use cocoa::foundation::{NSPoint, NSRect};
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+
+    unsafe {
+        let screens: *mut Object = msg_send![class!(NSScreen), screens];
+        if screens.is_null() {
+            return None;
+        }
+        let count: usize = msg_send![screens, count];
+        if count == 0 {
+            return None;
+        }
+        let primary: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+        let primary_frame: NSRect = msg_send![primary, frame];
+        let point: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+        Some((point.x, primary_frame.size.height - point.y))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn mouse_location() -> Option<(f64, f64)> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn primary_mouse_pressed() -> bool {
+    use objc::{class, msg_send, sel, sel_impl};
+    let buttons: u64 = unsafe { msg_send![class!(NSEvent), pressedMouseButtons] };
+    buttons & 1 == 1
+}
+
+#[cfg(not(target_os = "macos"))]
+fn primary_mouse_pressed() -> bool {
+    false
+}
+
+fn start_touch_capture(
+    app: tauri::AppHandle,
+    platform: String,
+    device_id: String,
+    started_at: Instant,
+    calibration: TouchCalibration,
+) -> Option<TouchCapture> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let initial_rect = content_rect(dock::device_rect(&app, &platform, &device_id)?, calibration);
+    let stop = Arc::new(AtomicBool::new(false));
+    let samples = Arc::new(Mutex::new(Vec::new()));
+    let stop_thread = stop.clone();
+    let samples_thread = samples.clone();
+
+    std::thread::spawn(move || {
+        let mut last_sample_at = Duration::ZERO;
+        while !stop_thread.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(16));
+            if !primary_mouse_pressed() {
+                continue;
+            }
+            let Some((mx, my)) = mouse_location() else {
+                continue;
+            };
+            let (rx, ry, rw, rh) = dock::device_rect(&app, &platform, &device_id)
+                .map(|rect| content_rect(rect, calibration))
+                .unwrap_or(initial_rect);
+            if rw <= 0.0 || rh <= 0.0 || mx < rx || mx > rx + rw || my < ry || my > ry + rh {
+                continue;
+            }
+            let elapsed = started_at.elapsed();
+            if elapsed.saturating_sub(last_sample_at) < Duration::from_millis(32) {
+                continue;
+            }
+            last_sample_at = elapsed;
+            if let Ok(mut list) = samples_thread.lock() {
+                list.push(TouchSample {
+                    time: elapsed.as_secs_f64(),
+                    x_ratio: ((mx - rx) / rw).clamp(0.0, 1.0),
+                    y_ratio: (((my - ry) / rh) + calibration.y_bias).clamp(0.0, 1.0),
+                });
+            }
+        }
+    });
+
+    Some(TouchCapture { stop, samples, calibration })
+}
+
+fn ffmpeg_color(color: &str) -> &'static str {
+    match color {
+        "blue" => "0x60A5FA",
+        "yellow" => "0xFACC15",
+        "pink" => "0xF472B6",
+        "white" => "white",
+        _ => "0x4ADE80",
+    }
+}
+
+fn marker_lavfi(color: &str) -> String {
+    format!(
+        "color=c={}@0.75:s=96x96,format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte((X-W/2)*(X-W/2)+(Y-H/2)*(Y-H/2),(W/2)*(W/2)),190,0)'",
+        ffmpeg_color(color)
+    )
+}
+
+fn overlay_touch_filters(samples: &[TouchSample], base_label: &str) -> (String, String) {
+    let mut filters = Vec::new();
+    let mut input = base_label.to_string();
+    for (index, sample) in samples.iter().enumerate() {
+        let output = format!("touch{}", index);
+        let start = (sample.time - 0.05).max(0.0);
+        let end = sample.time + 0.22;
+        filters.push(format!(
+            "[{}][1:v]overlay=shortest=1:x='{:.6}*main_w-overlay_w/2':y='{:.6}*main_h-overlay_h/2':enable='between(t,{:.3},{:.3})'[{}]",
+            input, sample.x_ratio, sample.y_ratio, start, end, output
+        ));
+        input = output;
+    }
+    (filters.join(";"), input)
+}
+
+#[derive(Serialize)]
+struct TouchDebug<'a> {
+    calibration: TouchCalibration,
+    samples: &'a [TouchSample],
+}
+
+fn write_touch_debug(path: &std::path::Path, calibration: TouchCalibration, samples: &[TouchSample]) {
+    if std::env::var_os("GROVR_TOUCH_DEBUG").is_none() {
+        return;
+    }
+    let debug_path = path.with_extension("touches.json");
+    if let Ok(json) = serde_json::to_string_pretty(&TouchDebug { calibration, samples }) {
+        let _ = std::fs::write(debug_path, json);
+    }
+}
+
 /// Re-encodes a simulator recording to a much smaller file.
 /// `simctl` records with a fast hardware encoder at a high, fixed bitrate (about 8 Mbps), which
 /// is wasteful for screens that mostly sit still. x264 at CRF 28 looks the same and is far
 /// smaller (a 47 s, 45 MB recording became under 1 MB; busy screens shrink less).
 /// Returns the new size, or None if ffmpeg is missing or fails (the original is kept).
-fn shrink_video(path: &std::path::Path, options: &QuickBarSettings) -> Option<u64> {
+fn process_video(
+    path: &std::path::Path,
+    options: &QuickBarSettings,
+    touches: &[TouchSample],
+    apply_shrink_filters: bool,
+) -> Option<u64> {
     let ffmpeg = find_ffmpeg()?;
-    let temp = path.with_extension("shrunk.mp4");
+    let temp = path.with_extension("grovr-processing.tmp.mp4");
+    let _ = std::fs::remove_file(&temp);
 
-    let mut filters: Vec<String> = Vec::new();
-    if options.video_max_width > 0 {
+    let mut base_filters: Vec<String> = Vec::new();
+    if apply_shrink_filters && options.video_max_width > 0 {
         // Never scale up; -2 keeps the height even, as the encoders require
-        filters.push(format!("scale='min({},iw)':-2", options.video_max_width));
+        base_filters.push(format!("scale='min({},iw)':-2", options.video_max_width));
     }
-    if options.video_fps > 0 {
-        filters.push(format!("fps={}", options.video_fps));
+    if apply_shrink_filters && options.video_fps > 0 {
+        base_filters.push(format!("fps={}", options.video_fps));
     }
 
     let mut command = Command::new(ffmpeg);
     command.args(["-v", "error", "-y", "-i"]).arg(path);
-    if !filters.is_empty() {
-        command.args(["-vf", &filters.join(",")]);
+    if options.recording_show_touches && !touches.is_empty() {
+        command.args(["-f", "lavfi", "-i", &marker_lavfi(&options.recording_touch_color)]);
+        let (base_label, mut filter_complex) = if base_filters.is_empty() {
+            ("0:v".to_string(), String::new())
+        } else {
+            ("base".to_string(), format!("[0:v]{}[base]", base_filters.join(",")))
+        };
+        let (touch_chain, output_label) = overlay_touch_filters(touches, &base_label);
+        if !filter_complex.is_empty() {
+            filter_complex.push(';');
+        }
+        filter_complex.push_str(&touch_chain);
+        command.args(["-filter_complex", &filter_complex, "-map", &format!("[{}]", output_label)]);
+    } else if !base_filters.is_empty() {
+        command.args(["-vf", &base_filters.join(",")]);
     }
     if options.video_codec == "hevc" {
         command.args(["-c:v", "libx265", "-tag:v", "hvc1", "-x265-params", "log-level=error"]);
@@ -180,9 +439,10 @@ fn shrink_video(path: &std::path::Path, options: &QuickBarSettings) -> Option<u6
         .ok()?;
 
     let original = std::fs::metadata(path).ok()?.len();
-    let shrunk = std::fs::metadata(&temp).ok().map(|m| m.len()).unwrap_or(0);
-    if status.success() && shrunk > 0 && shrunk < original && std::fs::rename(&temp, path).is_ok() {
-        return Some(shrunk);
+    let processed = std::fs::metadata(&temp).ok().map(|m| m.len()).unwrap_or(0);
+    let should_replace = options.recording_show_touches && !touches.is_empty() || processed < original;
+    if status.success() && processed > 0 && should_replace && std::fs::rename(&temp, path).is_ok() {
+        return Some(processed);
     }
     let _ = std::fs::remove_file(&temp);
     None
@@ -205,7 +465,8 @@ pub async fn start_device_recording(
         }
 
         let dir = recordings_dir()?;
-        remove_old_recordings(&dir, quick_bar_settings(&app).recording_keep_hours);
+        let options = quick_bar_settings(&app);
+        remove_old_recordings(&dir, options.recording_keep_hours);
 
         let millis = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -246,19 +507,36 @@ pub async fn start_device_recording(
 
         // If it dies straight away, say so. Polling returns as soon as there is an answer
         // instead of always waiting out the full check.
-        let started = Instant::now();
-        while started.elapsed() < START_CHECK {
+        let process_started = Instant::now();
+        while process_started.elapsed() < START_CHECK {
             if let Ok(Some(status)) = child.try_wait() {
                 return Err(format!("Recording could not start ({})", status));
             }
             std::thread::sleep(START_POLL);
         }
 
+        let metrics = (options.recording_show_touches && find_ffmpeg().is_some())
+            .then(|| screen_metrics(&platform, &device_id))
+            .flatten();
+        let calibration = TouchCalibration {
+            aspect: metrics.map(ScreenMetrics::aspect),
+            // Simulator window coordinates sit slightly below the MP4 coordinate space.
+            // Move only simulator markers up by 20 recorded pixels; emulator mapping is fine.
+            y_bias: if platform == "ios" {
+                metrics.map(|m| -20.0 / m.height).unwrap_or(0.0)
+            } else {
+                0.0
+            },
+        };
+        let touch_capture = (options.recording_show_touches && find_ffmpeg().is_some())
+            .then(|| start_touch_capture(app.clone(), platform.clone(), device_id.clone(), process_started, calibration))
+            .flatten();
+
         state
             .0
             .lock()
             .map_err(|e| e.to_string())?
-            .insert(id, ActiveRecording { child, local_path, started_at, android });
+            .insert(id, ActiveRecording { child, local_path, started_at, android, touch_capture });
         Ok(started_at)
     })
     .await
@@ -332,10 +610,28 @@ pub async fn stop_device_recording(
             return Err("The recording is empty".to_string());
         }
 
-        // Only simulator recordings are shrunk: Android's recorder already uses a modest bitrate
         let options = quick_bar_settings(&app);
-        let final_bytes = if recording.android.is_none() && options.shrink_recordings {
-            shrink_video(&recording.local_path, &options).unwrap_or(original_bytes)
+        let (touch_samples, touch_calibration) = if let Some(capture) = recording.touch_capture.take() {
+            capture.stop.store(true, Ordering::Relaxed);
+            std::thread::sleep(Duration::from_millis(40));
+            (
+                capture.samples.lock().map(|samples| samples.clone()).unwrap_or_default(),
+                Some(capture.calibration),
+            )
+        } else {
+            (Vec::new(), None)
+        };
+        if let Some(calibration) = touch_calibration {
+            write_touch_debug(&recording.local_path, calibration, &touch_samples);
+        }
+
+        // Android's recorder already uses a modest bitrate, so shrinking is still simulator-only.
+        // Touches are burned in for both platforms when samples were captured.
+        let apply_shrink_filters = recording.android.is_none() && options.shrink_recordings;
+        let should_process = apply_shrink_filters
+            || (options.recording_show_touches && !touch_samples.is_empty());
+        let final_bytes = if should_process {
+            process_video(&recording.local_path, &options, &touch_samples, apply_shrink_filters).unwrap_or(original_bytes)
         } else {
             original_bytes
         };
@@ -358,6 +654,9 @@ pub fn stop_all(app: &tauri::AppHandle) {
         return;
     };
     for (_, mut recording) in recordings.drain() {
+        if let Some(capture) = recording.touch_capture.take() {
+            capture.stop.store(true, Ordering::Relaxed);
+        }
         match &recording.android {
             None => {
                 let _ = Command::new("kill").args(["-INT", &recording.child.id().to_string()]).output();

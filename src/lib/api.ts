@@ -110,6 +110,8 @@ export interface QuickBarSettings {
   video_codec: 'h264' | 'hevc';
   /** Recordings older than this many hours are deleted when a new one starts; 0 keeps them */
   recording_keep_hours: number;
+  recording_show_touches: boolean;
+  recording_touch_color: 'green' | 'blue' | 'yellow' | 'pink' | 'white';
   screenshot_save_to_desktop: boolean;
 }
 

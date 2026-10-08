@@ -9,6 +9,8 @@ export const DEFAULT_QUICK_BAR_SETTINGS: QuickBarSettings = {
   video_max_width: 0,
   video_codec: 'h264',
   recording_keep_hours: 24,
+  recording_show_touches: false,
+  recording_touch_color: 'green',
   screenshot_save_to_desktop: false,
 };
 

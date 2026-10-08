@@ -139,6 +139,12 @@ pub struct QuickBarSettings {
     /// Recordings older than this many hours are deleted when a new one starts; 0 keeps them
     #[serde(default = "default_keep_hours")]
     pub recording_keep_hours: u32,
+    /// Burn host pointer/touch markers into finished device recordings using ffmpeg
+    #[serde(default)]
+    pub recording_show_touches: bool,
+    /// Pointer marker color used when touches are burned into recordings
+    #[serde(default = "default_touch_color")]
+    pub recording_touch_color: String,
     /// Also save screenshots to the Desktop (they are always copied to the clipboard)
     #[serde(default)]
     pub screenshot_save_to_desktop: bool,
@@ -153,6 +159,8 @@ impl Default for QuickBarSettings {
             video_max_width: 0,
             video_codec: default_video_codec(),
             recording_keep_hours: default_keep_hours(),
+            recording_show_touches: false,
+            recording_touch_color: default_touch_color(),
             screenshot_save_to_desktop: false,
         }
     }
@@ -176,6 +184,10 @@ fn default_video_codec() -> String {
 
 fn default_keep_hours() -> u32 {
     24
+}
+
+fn default_touch_color() -> String {
+    "green".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

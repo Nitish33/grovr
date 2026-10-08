@@ -71,6 +71,7 @@ export function DockWindow() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recording, setRecording] = useState<RecordingState>("idle");
   const [linksOpen, setLinksOpen] = useState(false);
+  const [pointerActive, setPointerActive] = useState(false);
   const [deepLinks, setDeepLinks] = useState<DeepLink[]>([]);
   const [apps, setApps] = useState<string[]>([]);
   const [draft, setDraft] = useState<DeepLinkDraft>({
@@ -335,6 +336,8 @@ export function DockWindow() {
       icon: MousePointer2,
       run: async () => {
         const mode = await api.deviceQuickAction(platform, deviceId, "toggle_pointer_location");
+        if (mode === "on") setPointerActive(true);
+        if (mode === "off") setPointerActive(false);
         return mode ? `Touch indicators ${mode}` : null;
       },
     },
@@ -411,6 +414,9 @@ export function DockWindow() {
         {actions.map((action) => {
           const active = feedback?.id === action.id;
           const isRecord = action.id === "record";
+          const isEnabled =
+            (action.id === "open-url" && linksOpen) ||
+            (action.id === "pointer-location" && pointerActive);
           const recordBusy =
             isRecord &&
             (recording === "starting" || recording === "processing");
@@ -429,7 +435,7 @@ export function DockWindow() {
               : "dock-button-error"
             : isRecord && recording === "recording"
               ? "dock-button-recording"
-              : linksOpen && action.id === "open-url"
+              : isEnabled
                 ? "dock-button-active"
                 : "";
           return (

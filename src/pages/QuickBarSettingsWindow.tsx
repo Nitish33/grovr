@@ -50,6 +50,14 @@ const WIDTH_OPTIONS = [
   { value: 540, label: '540 px wide' },
 ];
 
+const TOUCH_COLOR_OPTIONS: { value: QuickBarSettings['recording_touch_color']; label: string; color: string }[] = [
+  { value: 'green', label: 'Green', color: '#4ade80' },
+  { value: 'blue', label: 'Blue', color: '#60a5fa' },
+  { value: 'yellow', label: 'Yellow', color: '#facc15' },
+  { value: 'pink', label: 'Pink', color: '#f472b6' },
+  { value: 'white', label: 'White', color: '#ffffff' },
+];
+
 const KEEP_OPTIONS = [
   { value: 1, label: '1 hour' },
   { value: 6, label: '6 hours' },
@@ -84,14 +92,16 @@ interface SwitchProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  disabled?: boolean;
 }
 
-function Switch({ checked, onChange, label }: SwitchProps) {
+function Switch({ checked, onChange, label, disabled }: SwitchProps) {
   return (
     <button
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       className={`qb-switch ${checked ? 'qb-switch-on' : ''}`}
       onClick={() => onChange(!checked)}
     >
@@ -247,6 +257,7 @@ function RecordingSection({
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const shrink = settings.shrink_recordings;
+  const canBurnTouches = Boolean(ffmpeg);
   const totalBytes = recordings.reduce((sum, r) => sum + r.size, 0);
 
   useEffect(() => {
@@ -276,6 +287,44 @@ function RecordingSection({
       <h2 className="qb-heading">Recording</h2>
 
       <div className="qb-card">
+        <Row
+          title="Show touches in recordings"
+          description="Burn tap and drag markers into the saved MP4 after recording. Requires ffmpeg."
+          disabled={!canBurnTouches}
+        >
+          <Switch
+            checked={settings.recording_show_touches && canBurnTouches}
+            onChange={(checked) => update({ recording_show_touches: checked })}
+            label="Show touches in recordings"
+            disabled={!canBurnTouches}
+          />
+        </Row>
+        {ffmpeg === null && (
+          <div className="qb-notice" role="alert">
+            Install <code>ffmpeg</code> with <code>brew install ffmpeg</code> to enable touches in recordings.
+          </div>
+        )}
+        {settings.recording_show_touches && ffmpeg && (
+          <Row title="Pointer color" description="Color used for the burned-in touch marker.">
+            <div className="qb-color-options" role="radiogroup" aria-label="Pointer color">
+              {TOUCH_COLOR_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`qb-color-option ${
+                    settings.recording_touch_color === option.value ? 'qb-color-option-active' : ''
+                  }`}
+                  onClick={() => update({ recording_touch_color: option.value })}
+                  role="radio"
+                  aria-checked={settings.recording_touch_color === option.value}
+                  title={option.label}
+                >
+                  <span style={{ background: option.color }} />
+                </button>
+              ))}
+            </div>
+          </Row>
+        )}
         <Row
           title="Shrink simulator recordings"
           description="After you stop, re-encode the video to a much smaller file. Emulator recordings are saved as recorded."

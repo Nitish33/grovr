@@ -382,6 +382,7 @@ pub fn set_global_shortcut(
 }
 
 const ALLOWED_FPS: [u32; 5] = [0, 15, 24, 30, 60];
+const ALLOWED_TOUCH_COLORS: [&str; 5] = ["green", "blue", "yellow", "pink", "white"];
 
 #[tauri::command]
 pub fn set_quick_bar_settings(
@@ -395,6 +396,11 @@ pub fn set_quick_bar_settings(
         video_max_width: quick_bar.video_max_width.min(4096),
         video_codec: if quick_bar.video_codec == "hevc" { "hevc".to_string() } else { "h264".to_string() },
         recording_keep_hours: quick_bar.recording_keep_hours.min(24 * 365),
+        recording_touch_color: if ALLOWED_TOUCH_COLORS.contains(&quick_bar.recording_touch_color.as_str()) {
+            quick_bar.recording_touch_color
+        } else {
+            "green".to_string()
+        },
         ..quick_bar
     };
 

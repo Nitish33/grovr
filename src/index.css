@@ -1597,7 +1597,14 @@ html.dock-root #root { background: transparent; }
 .dock-button-danger:hover { background: hsl(var(--destructive) / 0.15); color: hsl(var(--destructive)); }
 .dock-button-recording { color: hsl(var(--destructive)); animation: dockRecordingPulse 1.2s ease-in-out infinite; }
 .dock-button:disabled { @apply cursor-default; }
-.dock-button-active { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.dock-button-active {
+  background: hsl(142 70% 45% / 0.18);
+  color: hsl(142 70% 52%);
+}
+.dock-button-active:hover {
+  background: hsl(142 70% 45% / 0.26);
+  color: hsl(142 70% 58%);
+}
 @keyframes dockRecordingPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
@@ -1753,6 +1760,7 @@ html.dock-root #root { background: transparent; }
   background: hsl(var(--secondary));
   border: 1px solid hsl(var(--border));
 }
+.qb-switch:disabled { @apply cursor-not-allowed; }
 .qb-switch:focus-visible { @apply outline-none ring-2 ring-ring; }
 .qb-switch-on { background: hsl(142 70% 40%); border-color: transparent; }
 .qb-switch-knob {
@@ -1760,6 +1768,22 @@ html.dock-root #root { background: transparent; }
   background: hsl(var(--foreground));
 }
 .qb-switch-on .qb-switch-knob { transform: translateX(1rem); background: white; }
+.qb-color-options { @apply flex items-center gap-1.5; }
+.qb-color-option {
+  @apply flex h-7 w-7 items-center justify-center rounded-md transition-colors;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--secondary) / 0.35);
+}
+.qb-color-option:hover { background: hsl(var(--secondary)); }
+.qb-color-option:focus-visible { @apply outline-none ring-2 ring-ring; }
+.qb-color-option span {
+  @apply block h-4 w-4 rounded-full;
+  border: 1px solid hsl(var(--border));
+}
+.qb-color-option-active {
+  border-color: hsl(142 70% 45%);
+  background: hsl(142 70% 45% / 0.14);
+}
 .qb-list-header { @apply flex items-center justify-between gap-2 mt-2; }
 .qb-list-actions { @apply flex items-center gap-1; }
 .qb-recordings { @apply flex flex-col gap-1; }
