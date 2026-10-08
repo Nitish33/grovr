@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import { Trash2 } from "lucide-react";
 import * as api from "@/lib/api";
 import type { DevicePlatform } from "@/lib/api";
@@ -17,10 +18,22 @@ type PickTarget = {
   pickOnly?: boolean;
 };
 
+type OverlayTarget = {
+  platform: DevicePlatform;
+  deviceId: string;
+};
+
 const RULER = 24;
 
 function readColor() {
   return new URLSearchParams(window.location.search).get("color") || "#4ade80";
+}
+
+function readOverlayTarget(): OverlayTarget | null {
+  const params = new URLSearchParams(window.location.search);
+  const platform = params.get("platform") === "android" ? "android" : params.get("platform") === "ios" ? "ios" : null;
+  const deviceId = params.get("id");
+  return platform && deviceId ? { platform, deviceId } : null;
 }
 
 function readInitialPickTarget(): PickTarget | null {
@@ -32,9 +45,42 @@ function readInitialPickTarget(): PickTarget | null {
     : null;
 }
 
+function designGuidesStorageKey(target: OverlayTarget) {
+  return `grovr-design-guides-${target.platform}-${target.deviceId}`;
+}
+
+function loadGuides(target: OverlayTarget | null, width: number, height: number): Guide[] {
+  if (!target) return [];
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(designGuidesStorageKey(target)) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item, index) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        !("orientation" in item) ||
+        !("position" in item) ||
+        (item.orientation !== "vertical" && item.orientation !== "horizontal") ||
+        typeof item.position !== "number"
+      ) {
+        return [];
+      }
+      const max = item.orientation === "vertical" ? width : height;
+      return [{
+        id: index + 1,
+        orientation: item.orientation,
+        position: Math.max(0, Math.min(max, item.position * max)),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
 export function DesignOverlayWindow() {
+  const overlayTarget = useMemo(readOverlayTarget, []);
   const [color, setColor] = useState(readColor);
-  const [guides, setGuides] = useState<Guide[]>([]);
+  const [guides, setGuides] = useState<Guide[]>(() => loadGuides(overlayTarget, window.innerWidth, window.innerHeight));
   const [selected, setSelected] = useState<number | null>(null);
   const [shiftDown, setShiftDown] = useState(false);
   const [pickTarget, setPickTarget] = useState<PickTarget | null>(readInitialPickTarget);
@@ -43,11 +89,32 @@ export function DesignOverlayWindow() {
   const dragRef = useRef<{ id: number; orientation: Guide["orientation"] } | null>(null);
   const idRef = useRef(1);
   const previewRef = useRef({ at: 0, seq: 0 });
+  const nativeIgnoresCursor = useRef<boolean | null>(null);
+  const selectedGuide = guides.find((guide) => guide.id === selected);
 
   useEffect(() => {
     document.documentElement.classList.add("design-overlay-root");
     return () => document.documentElement.classList.remove("design-overlay-root");
   }, []);
+
+  useEffect(() => {
+    idRef.current = Math.max(0, ...guides.map((guide) => guide.id)) + 1;
+  }, []);
+
+  useEffect(() => {
+    if (!overlayTarget) return;
+    try {
+      localStorage.setItem(
+        designGuidesStorageKey(overlayTarget),
+        JSON.stringify(guides.map((guide) => ({
+          orientation: guide.orientation,
+          position: guide.position / Math.max(1, guide.orientation === "vertical" ? size.width : size.height),
+        }))),
+      );
+    } catch {
+      // Ignore storage failures; the guide overlay should remain usable.
+    }
+  }, [guides, overlayTarget, size.height, size.width]);
 
   useEffect(() => {
     const update = () => setSize({ width: window.innerWidth, height: window.innerHeight });
@@ -93,6 +160,65 @@ export function DesignOverlayWindow() {
       window.removeEventListener("pointerup", onUp);
     };
   }, [size.width, size.height]);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    let cancelled = false;
+
+    const setNativePassthrough = async (ignore: boolean) => {
+      if (nativeIgnoresCursor.current === ignore) return;
+      nativeIgnoresCursor.current = ignore;
+      try {
+        await appWindow.setIgnoreCursorEvents(ignore);
+      } catch (err) {
+        console.error("Failed to update design overlay cursor passthrough:", err);
+      }
+    };
+
+    const isOverDeleteButton = (x: number, y: number) => {
+      if (!selectedGuide) return false;
+      const left = selectedGuide.orientation === "vertical" ? Math.min(size.width - 36, selectedGuide.position + 8) : RULER + 8;
+      const top = selectedGuide.orientation === "horizontal" ? Math.min(size.height - 36, selectedGuide.position + 8) : RULER + 8;
+      return x >= left && x <= left + 32 && y >= top && y <= top + 32;
+    };
+
+    const isInteractivePoint = (x: number, y: number) => {
+      if (pickTarget || dragRef.current) return true;
+      if (x < 0 || y < 0 || x > size.width || y > size.height) return false;
+      if (x <= RULER || x >= size.width - RULER || y <= RULER || y >= size.height - RULER) return true;
+      if (isOverDeleteButton(x, y)) return true;
+      return guides.some((guide) =>
+        guide.orientation === "vertical"
+          ? Math.abs(x - guide.position) <= 6
+          : Math.abs(y - guide.position) <= 6,
+      );
+    };
+
+    const updatePassthrough = async () => {
+      try {
+        const [cursor, position, scaleFactor] = await Promise.all([
+          cursorPosition(),
+          appWindow.outerPosition(),
+          appWindow.scaleFactor(),
+        ]);
+        if (cancelled) return;
+        const x = (cursor.x - position.x) / scaleFactor;
+        const y = (cursor.y - position.y) / scaleFactor;
+        await setNativePassthrough(!isInteractivePoint(x, y));
+      } catch (err) {
+        console.error("Failed to hit-test design overlay:", err);
+        await setNativePassthrough(false);
+      }
+    };
+
+    void updatePassthrough();
+    const interval = window.setInterval(updatePassthrough, 50);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      void setNativePassthrough(false);
+    };
+  }, [guides, pickTarget, selectedGuide, size.height, size.width]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -166,7 +292,6 @@ export function DesignOverlayWindow() {
     setSelected(null);
   };
 
-  const selectedGuide = guides.find((guide) => guide.id === selected);
   const verticalMeasures = useMemo(
     () => measures(
       guides.filter((guide) => guide.orientation === "vertical").map((guide) => guide.position),
