@@ -3,11 +3,11 @@
 
 use super::devices::{adb_binary, ios_simulators_blocking, running_avds};
 use serde::Serialize;
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::utils::config::Color;
 
@@ -32,6 +32,8 @@ pub struct DockState {
     device_rects: Mutex<HashMap<String, (f64, f64, f64, f64)>>,
     /// The toast window currently shown for each bar
     toasts: Mutex<HashMap<String, String>>,
+    /// Design overlay labels that are temporarily full-screen for color picking
+    full_screen_pickers: Mutex<HashSet<String>>,
 }
 
 static TOAST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -687,6 +689,50 @@ mod follow {
         place_top_left(target, x, y);
     }
 
+    /// Expands a window over the union of all screens, for tools like the color picker that
+    /// should not be constrained to the simulator/emulator window.
+    pub fn place_over_all_screens(target: &tauri::WebviewWindow) {
+        let target = target.clone();
+        let handle = target.clone();
+        let _ = handle.run_on_main_thread(move || {
+            use cocoa::foundation::NSRect;
+            use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+
+            let Ok(ptr) = target.ns_window() else {
+                return;
+            };
+            let ns_window = ptr as *mut Object;
+            if ns_window.is_null() {
+                return;
+            }
+
+            unsafe {
+                let screens: *mut Object = msg_send![class!(NSScreen), screens];
+                let count: usize = msg_send![screens, count];
+                if count == 0 {
+                    return;
+                }
+
+                let first: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+                let mut union: NSRect = msg_send![first, frame];
+                for i in 1..count {
+                    let screen: *mut Object = msg_send![screens, objectAtIndex: i];
+                    let frame: NSRect = msg_send![screen, frame];
+                    let min_x = union.origin.x.min(frame.origin.x);
+                    let min_y = union.origin.y.min(frame.origin.y);
+                    let max_x = (union.origin.x + union.size.width).max(frame.origin.x + frame.size.width);
+                    let max_y = (union.origin.y + union.size.height).max(frame.origin.y + frame.size.height);
+                    union.origin.x = min_x;
+                    union.origin.y = min_y;
+                    union.size.width = max_x - min_x;
+                    union.size.height = max_y - min_y;
+                }
+
+                let _: () = msg_send![ns_window, setFrame: union display: true];
+            }
+        });
+    }
+
     /// Shows the "recording" pill near the top of the device window the calling bar is docked to.
     pub fn show_indicator(bar: &tauri::WebviewWindow, started_at: u64) -> Result<(), String> {
         let app = bar.app_handle().clone();
@@ -814,7 +860,18 @@ mod follow {
                 }
                 let overlay_label = format!("dock-design-overlay-{}", window.label());
                 if let Some(overlay) = window.app_handle().get_webview_window(&overlay_label) {
-                    place_over_device(&overlay, (device.x, device.y, device.w, device.h));
+                    let full_screen_picker = window
+                        .app_handle()
+                        .state::<DockState>()
+                        .full_screen_pickers
+                        .lock()
+                        .map(|labels| labels.contains(&overlay_label))
+                        .unwrap_or(false);
+                    if full_screen_picker {
+                        place_over_all_screens(&overlay);
+                    } else {
+                        place_over_device(&overlay, (device.x, device.y, device.w, device.h));
+                    }
                     let _ = overlay.show();
                 }
                 debug(&format!(
@@ -885,11 +942,24 @@ pub async fn show_design_overlay(
     let rect = device_rect(&app, &platform, &device_id).ok_or_else(|| "Quick bar is not attached to a device".to_string())?;
     let pick = pick_color.unwrap_or(false);
     let picker_only = pick_only.unwrap_or(false);
+    if let Ok(mut pickers) = app.state::<DockState>().full_screen_pickers.lock() {
+        if picker_only {
+            pickers.insert(label.clone());
+        } else {
+            pickers.remove(&label);
+        }
+    }
 
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.emit("design-overlay-color", color);
         #[cfg(target_os = "macos")]
-        follow::place_over_device(&existing, rect);
+        {
+            if picker_only {
+                follow::place_over_all_screens(&existing);
+            } else {
+                follow::place_over_device(&existing, rect);
+            }
+        }
         if pick || !existing.is_visible().unwrap_or(false) {
             existing.show().map_err(|e| e.to_string())?;
         }
@@ -928,14 +998,24 @@ pub async fn show_design_overlay(
         .map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "macos")]
-    follow::place_over_device(&overlay, rect);
+    {
+        if picker_only {
+            follow::place_over_all_screens(&overlay);
+        } else {
+            follow::place_over_device(&overlay, rect);
+        }
+    }
     overlay.show().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn hide_design_overlay(app: tauri::AppHandle, platform: String, device_id: String) -> Result<(), String> {
     validate(&platform, &device_id)?;
-    if let Some(overlay) = app.get_webview_window(&design_overlay_label(&platform, &device_id)) {
+    let label = design_overlay_label(&platform, &device_id);
+    if let Ok(mut pickers) = app.state::<DockState>().full_screen_pickers.lock() {
+        pickers.remove(&label);
+    }
+    if let Some(overlay) = app.get_webview_window(&label) {
         overlay.close().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -982,6 +1062,7 @@ pub async fn preview_design_color(
 }
 
 #[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs, deprecated)]
 fn pick_design_color_preview_macos(
     app: &tauri::AppHandle,
     platform: &str,
@@ -994,13 +1075,8 @@ fn pick_design_color_preview_macos(
     use core_graphics::window::{
         create_image, kCGWindowImageNominalResolution, kCGWindowListOptionOnScreenBelowWindow,
     };
-    use objc::{msg_send, runtime::Object, sel, sel_impl};
-
-    let (device_x, device_y, device_w, device_h) =
-        device_rect(app, platform, device_id).ok_or_else(|| "Quick bar is not attached to a device".to_string())?;
-    if x < 0.0 || y < 0.0 || x > device_w || y > device_h {
-        return Err("Pick a pixel inside the device window".to_string());
-    }
+    use cocoa::foundation::NSRect;
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 
     let overlay = app
         .get_webview_window(&design_overlay_label(platform, device_id))
@@ -1014,12 +1090,52 @@ fn pick_design_color_preview_macos(
         return Err("Could not read the overlay window number".to_string());
     }
 
+    let (screen_left, screen_top, screen_right, screen_bottom, overlay_left, overlay_top) = unsafe {
+        let screens: *mut Object = msg_send![class!(NSScreen), screens];
+        let count: usize = msg_send![screens, count];
+        if count == 0 {
+            return Err("Could not read the screen bounds".to_string());
+        }
+
+        let primary: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+        let primary_frame: NSRect = msg_send![primary, frame];
+        let primary_height = primary_frame.size.height;
+
+        let first: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+        let first_frame: NSRect = msg_send![first, frame];
+        let mut left = first_frame.origin.x;
+        let mut right = first_frame.origin.x + first_frame.size.width;
+        let mut top = primary_height - (first_frame.origin.y + first_frame.size.height);
+        let mut bottom = top + first_frame.size.height;
+
+        for i in 1..count {
+            let screen: *mut Object = msg_send![screens, objectAtIndex: i];
+            let frame: NSRect = msg_send![screen, frame];
+            let screen_top = primary_height - (frame.origin.y + frame.size.height);
+            left = left.min(frame.origin.x);
+            right = right.max(frame.origin.x + frame.size.width);
+            top = top.min(screen_top);
+            bottom = bottom.max(screen_top + frame.size.height);
+        }
+
+        let overlay_frame: NSRect = msg_send![ns_window, frame];
+        let overlay_left = overlay_frame.origin.x;
+        let overlay_top = primary_height - (overlay_frame.origin.y + overlay_frame.size.height);
+        (left, top, right, bottom, overlay_left, overlay_top)
+    };
+
+    let global_x = overlay_left + x;
+    let global_y = overlay_top + y;
+    if global_x < screen_left || global_x > screen_right || global_y < screen_top || global_y > screen_bottom {
+        return Err("Pick a pixel inside the screen".to_string());
+    }
+
     let sample_size = sample_size.max(1) as f64;
     let half = sample_size / 2.0;
-    let origin_x = (device_x + x - half).max(device_x);
-    let origin_y = (device_y + y - half).max(device_y);
-    let end_x = (origin_x + sample_size).min(device_x + device_w);
-    let end_y = (origin_y + sample_size).min(device_y + device_h);
+    let origin_x = (global_x - half).max(screen_left);
+    let origin_y = (global_y - half).max(screen_top);
+    let end_x = (origin_x + sample_size).min(screen_right);
+    let end_y = (origin_y + sample_size).min(screen_bottom);
     let capture_w = (end_x - origin_x).max(1.0);
     let capture_h = (end_y - origin_y).max(1.0);
     let rect = CGRect::new(
@@ -1059,8 +1175,8 @@ fn pick_design_color_preview_macos(
 
     let scale_x = width as f64 / capture_w;
     let scale_y = height as f64 / capture_h;
-    let center_x = ((device_x + x - origin_x) * scale_x).floor().clamp(0.0, (width - 1) as f64) as usize;
-    let center_y = ((device_y + y - origin_y) * scale_y).floor().clamp(0.0, (height - 1) as f64) as usize;
+    let center_x = ((global_x - origin_x) * scale_x).floor().clamp(0.0, (width - 1) as f64) as usize;
+    let center_y = ((global_y - origin_y) * scale_y).floor().clamp(0.0, (height - 1) as f64) as usize;
     let center = pixel(center_x, center_y)?;
     let mut pixels = Vec::with_capacity(width * height);
     for py in 0..height {
@@ -1349,26 +1465,65 @@ fn screenshot_temp_path(device_id: &str) -> Result<PathBuf, String> {
 }
 
 /// Puts a PNG file on the clipboard as an image, so it can be pasted into chats, issues, etc.
-/// Done by `osascript` rather than in-process: NSPasteboard must not be touched from a worker
-/// thread (see clipboard.rs), and this needs no image-decoding dependency.
-fn copy_png_to_clipboard(path: &std::path::Path) -> Result<(), String> {
+/// NSPasteboard is main-thread-only, so dispatch the native write instead of spawning osascript.
+fn copy_png_to_clipboard(app: &tauri::AppHandle, path: &Path) -> Result<(), String> {
     if !cfg!(target_os = "macos") {
         return Err("Copying a screenshot is only available on macOS".to_string());
     }
-    run(
-        Command::new("osascript")
-            .args([
-                "-e",
-                "on run argv",
-                "-e",
-                "set the clipboard to (read (POSIX file (item 1 of argv)) as \u{ab}class PNGf\u{bb})",
-                "-e",
-                "end run",
-            ])
-            .arg(path),
-        "copy the screenshot to the clipboard",
-    )?;
-    Ok(())
+    let png = std::fs::read(path).map_err(|e| format!("Failed to read the screenshot: {}", e))?;
+    let (tx, rx) = mpsc::channel();
+
+    app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
+        let result = unsafe { write_png_to_pasteboard(&png) };
+        #[cfg(not(target_os = "macos"))]
+        let result = Err("Copying a screenshot is only available on macOS".to_string());
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+
+    rx.recv()
+        .map_err(|_| "Failed to receive clipboard result".to_string())?
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+unsafe fn write_png_to_pasteboard(png: &[u8]) -> Result<(), String> {
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+
+    let data: *mut Object = msg_send![class!(NSData), dataWithBytes: png.as_ptr() length: png.len()];
+    if data.is_null() {
+        return Err("Failed to prepare the screenshot for the clipboard".to_string());
+    }
+
+    let pasteboard: *mut Object = msg_send![class!(NSPasteboard), generalPasteboard];
+    if pasteboard.is_null() {
+        return Err("Failed to open the clipboard".to_string());
+    }
+
+    let _: i64 = msg_send![pasteboard, clearContents];
+    let png_type = unsafe { ns_string("public.png") };
+    let ok: bool = msg_send![pasteboard, setData: data forType: png_type];
+    let _: () = msg_send![png_type, release];
+    if ok {
+        Ok(())
+    } else {
+        Err("Failed to copy the screenshot to the clipboard".to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+unsafe fn ns_string(value: &str) -> *mut objc::runtime::Object {
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+    const NS_UTF8_STRING_ENCODING: usize = 4;
+    let string: *mut Object = msg_send![class!(NSString), alloc];
+    msg_send![
+        string,
+        initWithBytes: value.as_ptr()
+        length: value.len()
+        encoding: NS_UTF8_STRING_ENCODING
+    ]
 }
 
 fn app_settings_save_to_desktop(app: &tauri::AppHandle) -> bool {
@@ -1486,9 +1641,11 @@ pub async fn reveal_screenshot(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn copy_screenshot(path: String) -> Result<(), String> {
+pub async fn copy_screenshot(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let file = screenshot_path(&path)?;
-    copy_png_to_clipboard(&file)
+    tokio::task::spawn_blocking(move || copy_png_to_clipboard(&app, &file))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 /// Only plain URLs / deep links: a scheme, no whitespace or control characters.
@@ -1533,7 +1690,7 @@ pub async fn device_quick_action(
             "screenshot" => {
                 let path = screenshot_temp_path(&device_id)?;
                 let path_str = path.to_string_lossy().to_string();
-                let result = (|| {
+                let result: Result<(), String> = (|| {
                     if ios {
                         simctl(&["io", &device_id, "screenshot", &path_str], "take a screenshot")?;
                     } else {
@@ -1541,10 +1698,13 @@ pub async fn device_quick_action(
                         let png = adb(&serial, &["exec-out", "screencap", "-p"], "take a screenshot")?;
                         std::fs::write(&path, png).map_err(|e| format!("Failed to save the screenshot: {}", e))?;
                     }
-                    if app_settings_save_to_desktop(&app) {
-                        save_screenshot_to_desktop(&path);
+                    let save_to_desktop = app_settings_save_to_desktop(&app);
+                    copy_png_to_clipboard(&app, &path)?;
+                    if save_to_desktop {
+                        let desktop_path = path.clone();
+                        std::thread::spawn(move || save_screenshot_to_desktop(&desktop_path));
                     }
-                    copy_png_to_clipboard(&path)
+                    Ok(())
                 })();
                 result?;
                 Ok(None)
