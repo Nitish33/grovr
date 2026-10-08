@@ -112,6 +112,8 @@ export interface QuickBarSettings {
   recording_keep_hours: number;
   recording_show_touches: boolean;
   recording_touch_color: 'green' | 'blue' | 'yellow' | 'pink' | 'white';
+  recording_capture_logs: boolean;
+  recording_capture_js_logs_only: boolean;
   screenshot_save_to_desktop: boolean;
 }
 
@@ -266,8 +268,12 @@ export async function hideRecordingIndicator(): Promise<void> {
   return invoke('hide_recording_indicator');
 }
 
-/** Starts recording; resolves with when it started (ms since the Unix epoch). */
-export async function startDeviceRecording(platform: DevicePlatform, deviceId: string): Promise<number> {
+export type RecordingToggleResult =
+  | { state: 'started'; started_at: number }
+  | { state: 'stopped'; recording: FinishedRecording };
+
+/** Starts recording, or stops an existing backend recording for this device. */
+export async function startDeviceRecording(platform: DevicePlatform, deviceId: string): Promise<RecordingToggleResult> {
   return invoke('start_device_recording', { platform, deviceId });
 }
 
@@ -278,6 +284,8 @@ export async function deviceRecordingStartedAt(platform: DevicePlatform, deviceI
 
 export interface FinishedRecording {
   path: string;
+  log_path?: string | null;
+  prompt: string;
   /** Size as recorded, and after shrinking (equal when it wasn't shrunk) */
   original_bytes: number;
   final_bytes: number;

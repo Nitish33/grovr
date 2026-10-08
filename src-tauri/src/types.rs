@@ -145,6 +145,12 @@ pub struct QuickBarSettings {
     /// Pointer marker color used when touches are burned into recordings
     #[serde(default = "default_touch_color")]
     pub recording_touch_color: String,
+    /// Save a native log file alongside quick-bar recordings
+    #[serde(default = "default_true")]
+    pub recording_capture_logs: bool,
+    /// Limit recording log capture to React Native JavaScript logs
+    #[serde(default)]
+    pub recording_capture_js_logs_only: bool,
     /// Also save screenshots to the Desktop (they are always copied to the clipboard)
     #[serde(default)]
     pub screenshot_save_to_desktop: bool,
@@ -161,6 +167,8 @@ impl Default for QuickBarSettings {
             recording_keep_hours: default_keep_hours(),
             recording_show_touches: false,
             recording_touch_color: default_touch_color(),
+            recording_capture_logs: true,
+            recording_capture_js_logs_only: false,
             screenshot_save_to_desktop: false,
         }
     }

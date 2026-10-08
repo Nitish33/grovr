@@ -461,6 +461,28 @@ function RecordingSection({
           </Row>
         )}
         <Row
+          title="Capture logs"
+          description="Save a native app log file next to each recording and include it in the copied prompt."
+        >
+          <Switch
+            checked={settings.recording_capture_logs}
+            onChange={(checked) => update({ recording_capture_logs: checked })}
+            label="Capture logs"
+          />
+        </Row>
+        <Row
+          title="JavaScript logs only"
+          description="Limit captured logs to React Native JS output: com.facebook.react.log:javascript on iOS and ReactNativeJS on Android."
+          disabled={!settings.recording_capture_logs}
+        >
+          <Switch
+            checked={settings.recording_capture_logs && settings.recording_capture_js_logs_only}
+            onChange={(checked) => update({ recording_capture_js_logs_only: checked })}
+            label="JavaScript logs only"
+            disabled={!settings.recording_capture_logs}
+          />
+        </Row>
+        <Row
           title="Shrink simulator recordings"
           description="After you stop, re-encode the video to a much smaller file. Emulator recordings are saved as recorded."
         >

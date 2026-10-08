@@ -360,6 +360,18 @@ export function DockWindow() {
     });
   };
 
+  const copyFinishedRecordingPrompt = async (video: api.FinishedRecording, existing = false) => {
+    await writeText(video.prompt || video.path);
+    const prefix = existing ? "Existing recording stopped. " : "";
+    void toast(
+      video.final_bytes < video.original_bytes
+        ? `${prefix}Recording prompt copied (${formatSize(video.original_bytes)} -> ${formatSize(video.final_bytes)})`
+        : video.log_path
+          ? `${prefix}Recording prompt copied with logs (${formatSize(video.final_bytes)})`
+          : `${prefix}Recording prompt copied (${formatSize(video.final_bytes)})`,
+    );
+  };
+
   const toggleRecording = async (): Promise<null> => {
     if (recording === "starting" || recording === "processing") return null;
 
@@ -367,10 +379,16 @@ export function DockWindow() {
       // Show something right away: the recorder takes a moment to come up
       setRecording("starting");
       try {
-        const startedAt = await api.startDeviceRecording(platform, deviceId);
-        setRecording("recording");
-        void api.showRecordingIndicator(startedAt);
-        void toast("Recording started. Click again to stop");
+        const result = await api.startDeviceRecording(platform, deviceId);
+        if (result.state === "started") {
+          setRecording("recording");
+          void api.showRecordingIndicator(result.started_at);
+          void toast("Recording started. Click again to stop");
+        } else {
+          setRecording("idle");
+          void api.hideRecordingIndicator();
+          await copyFinishedRecordingPrompt(result.recording, true);
+        }
       } catch (err) {
         setRecording("idle");
         void toast(String(err), "error");
@@ -384,12 +402,7 @@ export function DockWindow() {
     void toast("Processing video…", "busy", true);
     try {
       const video = await api.stopDeviceRecording(platform, deviceId);
-      await writeText(video.path);
-      void toast(
-        video.final_bytes < video.original_bytes
-          ? `Video path copied (${formatSize(video.original_bytes)} → ${formatSize(video.final_bytes)})`
-          : `Video path copied to the clipboard (${formatSize(video.final_bytes)})`,
-      );
+      await copyFinishedRecordingPrompt(video);
     } catch (err) {
       void toast(String(err), "error");
     } finally {

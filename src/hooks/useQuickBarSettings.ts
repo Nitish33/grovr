@@ -11,6 +11,8 @@ export const DEFAULT_QUICK_BAR_SETTINGS: QuickBarSettings = {
   recording_keep_hours: 24,
   recording_show_touches: false,
   recording_touch_color: 'green',
+  recording_capture_logs: true,
+  recording_capture_js_logs_only: false,
   screenshot_save_to_desktop: false,
 };
 

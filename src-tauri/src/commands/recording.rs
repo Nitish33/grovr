@@ -12,12 +12,16 @@ use super::settings::SettingsState;
 use crate::types::QuickBarSettings;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 use tauri::Manager;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 const RECORDINGS_DIR: &str = "grovr-recordings";
 /// A recording that dies within this long of starting never really started (device not
@@ -33,9 +37,18 @@ const ANDROID_TIME_LIMIT_SECS: &str = "180";
 #[derive(Debug, Serialize)]
 pub struct FinishedRecording {
     pub path: String,
+    pub log_path: Option<String>,
+    pub prompt: String,
     /// Size of the video as recorded, and after shrinking (equal when it wasn't shrunk)
     pub original_bytes: u64,
     pub final_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum RecordingToggleResult {
+    Started { started_at: u64 },
+    Stopped { recording: FinishedRecording },
 }
 
 struct ActiveRecording {
@@ -47,6 +60,7 @@ struct ActiveRecording {
     /// Android: the adb serial and the file on the device that is pulled when finished
     android: Option<(String, String)>,
     touch_capture: Option<TouchCapture>,
+    log_capture: Option<LogCapture>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,6 +74,14 @@ struct TouchCapture {
     stop: Arc<AtomicBool>,
     samples: Arc<Mutex<Vec<TouchSample>>>,
     calibration: TouchCalibration,
+}
+
+struct LogCapture {
+    child: Child,
+    process_group: Option<u32>,
+    path: PathBuf,
+    done: mpsc::Receiver<()>,
+    app_filter: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -207,6 +229,186 @@ fn android_serial(avd_name: &str) -> Result<String, String> {
         .find(|(_, name)| name == avd_name)
         .map(|(serial, _)| serial)
         .ok_or_else(|| "Emulator is not running".to_string())
+}
+
+fn sanitize_name(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .collect()
+}
+
+fn logs_dir() -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join("grovr-recording-logs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create the recording logs folder: {}", e))?;
+    Ok(dir)
+}
+
+fn ios_log_terms(bundle_id: &str, js_only: bool) -> Vec<String> {
+    if js_only {
+        return vec!["com.facebook.react.log".to_string(), "javascript".to_string()];
+    }
+    let mut terms = vec![bundle_id.to_string()];
+    if let Some(last) = bundle_id.rsplit('.').next().filter(|value| !value.is_empty()) {
+        terms.push(last.to_string());
+    }
+    terms.sort();
+    terms.dedup();
+    terms
+}
+
+fn ios_process_predicate(terms: &[String], js_only: bool) -> String {
+    if js_only {
+        return "subsystem == \"com.facebook.react.log\" AND category == \"javascript\"".to_string();
+    }
+    let clauses = terms.iter().flat_map(|text| {
+        let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
+        [
+            format!("process CONTAINS[c] \"{}\"", escaped),
+            format!("subsystem CONTAINS[c] \"{}\"", escaped),
+            format!("category CONTAINS[c] \"{}\"", escaped),
+            format!("eventMessage CONTAINS[c] \"{}\"", escaped),
+        ]
+    });
+    clauses.collect::<Vec<_>>().join(" OR ")
+}
+
+fn write_log_capture_header(file: &mut std::fs::File, platform: &str, device_id: &str, app_filter: &str) {
+    let _ = writeln!(file, "# Grovr recording log capture");
+    let _ = writeln!(file, "# Platform: {}", platform);
+    let _ = writeln!(file, "# Device: {}", device_id);
+    let _ = writeln!(file, "# App filter: {}", app_filter);
+    let _ = writeln!(file, "# Started: {:?}", SystemTime::now());
+    let _ = writeln!(file);
+}
+
+fn append_empty_log_note(path: &std::path::Path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path) {
+        let _ = writeln!(file);
+        let _ = writeln!(
+            file,
+            "# No app log lines were emitted while recording. The app may not have logged, the process name may differ from the bundle/package, or the app was not running when recording started."
+        );
+    }
+}
+
+fn android_log_pid_args(serial: &str, package: &str) -> Vec<String> {
+    Command::new(adb_binary())
+        .args(["-s", serial, "shell", "pidof", package])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|text| !text.is_empty())
+        .map(|pids| pids.split_whitespace().flat_map(|pid| ["--pid".to_string(), pid.to_string()]).collect())
+        .unwrap_or_default()
+}
+
+fn start_log_capture(platform: &str, device_id: &str, millis: u128, js_only: bool) -> Option<LogCapture> {
+    let app_filter = if platform == "ios" {
+        dock::current_ios_bundle_id(device_id).ok()
+    } else {
+        android_serial(device_id)
+            .ok()
+            .and_then(|serial| dock::current_android_package(&serial).ok())
+    }?;
+
+    let path = logs_dir()
+        .ok()?
+        .join(format!("{}-{}-{}.log", sanitize_name(device_id), sanitize_name(&app_filter), millis));
+
+    let mut command = if platform == "ios" {
+        if !cfg!(target_os = "macos") {
+            return None;
+        }
+        let mut c = Command::new("xcrun");
+        c.args(["simctl", "spawn", device_id, "log", "stream", "--style", "compact", "--level", "debug"]);
+        c.args(["--predicate", &ios_process_predicate(&ios_log_terms(&app_filter, js_only), js_only)]);
+        c
+    } else {
+        let serial = android_serial(device_id).ok()?;
+        let mut c = Command::new(adb_binary());
+        c.args(["-s", &serial, "logcat", "-v", "threadtime", "-T", "1"]);
+        if js_only {
+            c.args(["-s", "ReactNativeJS:V", "*:S"]);
+        } else {
+            for arg in android_log_pid_args(&serial, &app_filter) {
+                c.arg(arg);
+            }
+        }
+        c
+    };
+
+    #[cfg(unix)]
+    {
+        command.process_group(0);
+    }
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let stdout = child.stdout.take()?;
+    let reader_path = path.clone();
+    let reader_platform = platform.to_string();
+    let reader_device_id = device_id.to_string();
+    let reader_app_filter = app_filter.clone();
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let Ok(mut file) = std::fs::File::create(&reader_path) else {
+            let _ = done_tx.send(());
+            return;
+        };
+        write_log_capture_header(&mut file, &reader_platform, &reader_device_id, &reader_app_filter);
+        for line in BufReader::new(stdout).split(b'\n').map_while(Result::ok) {
+            let text = String::from_utf8_lossy(&line).trim_end_matches('\r').to_string();
+            if text.starts_with("Filtering the log data using") || text.starts_with("Timestamp ") {
+                continue;
+            }
+            let _ = writeln!(file, "{}", text);
+        }
+        let _ = done_tx.send(());
+    });
+
+    let process_group = Some(child.id());
+    Some(LogCapture { child, process_group, path, done: done_rx, app_filter })
+}
+
+fn stop_log_capture(capture: &mut LogCapture) -> Option<PathBuf> {
+    #[cfg(unix)]
+    if let Some(group) = capture.process_group {
+        let _ = Command::new("kill").args(["-TERM", &format!("-{}", group)]).output();
+    }
+    let _ = capture.child.kill();
+    let _ = capture.child.wait();
+    let _ = capture.done.recv_timeout(Duration::from_millis(250));
+    if std::fs::read_to_string(&capture.path)
+        .map(|text| !text.lines().any(|line| !line.trim().is_empty() && !line.starts_with('#')))
+        .unwrap_or(false)
+    {
+        append_empty_log_note(&capture.path);
+    }
+    std::fs::metadata(&capture.path)
+        .ok()
+        .filter(|m| m.len() > 0)
+        .map(|_| capture.path.clone())
+}
+
+fn recording_prompt(video_path: &std::path::Path, log_path: Option<&std::path::Path>, app_filter: Option<&str>) -> String {
+    let video = video_path.to_string_lossy();
+    match log_path {
+        Some(log) => format!(
+            "Please analyze this mobile app issue using both attached artifacts:\n\nVideo recording: {}\nApp logs{}: {}\n\nUse the video to understand the visible behavior and the logs to identify errors, warnings, failed requests, crashes, or suspicious timing around the same moment. Summarize the likely root cause and suggest concrete next debugging or fix steps.",
+            video,
+            app_filter.map(|filter| format!(" filtered by {}", filter)).unwrap_or_default(),
+            log.to_string_lossy(),
+        ),
+        None => format!(
+            "Please analyze this mobile app issue using the attached video recording:\n\nVideo recording: {}\n\nNo app log file was captured for this recording. Use the video to summarize the visible behavior and suggest concrete next debugging or fix steps.",
+            video,
+        ),
+    }
 }
 
 fn run(command: &mut Command, what: &str) -> Result<(), String> {
@@ -448,20 +650,95 @@ fn process_video(
     None
 }
 
+fn finish_recording(
+    mut recording: ActiveRecording,
+    app: &tauri::AppHandle,
+) -> Result<FinishedRecording, String> {
+    let (log_path, app_filter) = if let Some(mut capture) = recording.log_capture.take() {
+        let app_filter = capture.app_filter.clone();
+        (stop_log_capture(&mut capture), Some(app_filter))
+    } else {
+        (None, None)
+    };
+
+    match &recording.android {
+        None => {
+            // Ctrl-C (SIGINT) makes simctl finalize the file; killing it would corrupt the video
+            let _ = Command::new("kill").args(["-INT", &recording.child.id().to_string()]).output();
+            wait_for_exit(&mut recording.child, STOP_TIMEOUT)?;
+        }
+        Some((serial, remote)) => {
+            // screenrecord runs on the device: interrupt it there so it finishes the file.
+            // It may already have stopped by itself (its time limit), which is fine.
+            let _ = Command::new(adb_binary())
+                .args(["-s", serial, "shell", "kill -2 $(pidof screenrecord)"])
+                .output();
+            wait_for_exit(&mut recording.child, STOP_TIMEOUT)?;
+
+            run(
+                Command::new(adb_binary())
+                    .args(["-s", serial, "pull", remote])
+                    .arg(&recording.local_path),
+                "copy the recording from the emulator",
+            )?;
+            let _ = Command::new(adb_binary()).args(["-s", serial, "shell", "rm", remote]).output();
+        }
+    }
+
+    let original_bytes = std::fs::metadata(&recording.local_path).map(|m| m.len()).unwrap_or(0);
+    if original_bytes == 0 {
+        return Err("The recording is empty".to_string());
+    }
+
+    let options = quick_bar_settings(app);
+    let (touch_samples, touch_calibration) = if let Some(capture) = recording.touch_capture.take() {
+        capture.stop.store(true, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(40));
+        (
+            capture.samples.lock().map(|samples| samples.clone()).unwrap_or_default(),
+            Some(capture.calibration),
+        )
+    } else {
+        (Vec::new(), None)
+    };
+    if let Some(calibration) = touch_calibration {
+        write_touch_debug(&recording.local_path, calibration, &touch_samples);
+    }
+
+    // Android's recorder already uses a modest bitrate, so shrinking is still simulator-only.
+    // Touches are burned in for both platforms when samples were captured.
+    let apply_shrink_filters = recording.android.is_none() && options.shrink_recordings;
+    let should_process = apply_shrink_filters
+        || (options.recording_show_touches && !touch_samples.is_empty());
+    let final_bytes = if should_process {
+        process_video(&recording.local_path, &options, &touch_samples, apply_shrink_filters).unwrap_or(original_bytes)
+    } else {
+        original_bytes
+    };
+
+    Ok(FinishedRecording {
+        prompt: recording_prompt(&recording.local_path, log_path.as_deref(), app_filter.as_deref()),
+        path: recording.local_path.to_string_lossy().to_string(),
+        log_path: log_path.map(|path| path.to_string_lossy().to_string()),
+        original_bytes,
+        final_bytes,
+    })
+}
+
 /// Starts recording the device's screen. Returns when it started (ms since the Unix epoch).
 #[tauri::command]
 pub async fn start_device_recording(
     app: tauri::AppHandle,
     platform: String,
     device_id: String,
-) -> Result<u64, String> {
+) -> Result<RecordingToggleResult, String> {
     validate(&platform, &device_id)?;
 
     tokio::task::spawn_blocking(move || {
         let state = app.state::<Recordings>();
         let id = key(&platform, &device_id);
-        if state.0.lock().map_err(|e| e.to_string())?.contains_key(&id) {
-            return Err("Already recording".to_string());
+        if let Some(recording) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
+            return finish_recording(recording, &app).map(|recording| RecordingToggleResult::Stopped { recording });
         }
 
         let dir = recordings_dir()?;
@@ -473,10 +750,7 @@ pub async fn start_device_recording(
             .map(|d| d.as_millis())
             .unwrap_or(0);
         let started_at = millis as u64;
-        let name: String = device_id
-            .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
-            .collect();
+        let name = sanitize_name(&device_id);
         let local_path = dir.join(format!("{}-{}.mp4", name, millis));
 
         let (mut child, android) = if platform == "ios" {
@@ -531,13 +805,17 @@ pub async fn start_device_recording(
         let touch_capture = (options.recording_show_touches && find_ffmpeg().is_some())
             .then(|| start_touch_capture(app.clone(), platform.clone(), device_id.clone(), process_started, calibration))
             .flatten();
+        let log_capture = options
+            .recording_capture_logs
+            .then(|| start_log_capture(&platform, &device_id, millis, options.recording_capture_js_logs_only))
+            .flatten();
 
         state
             .0
             .lock()
             .map_err(|e| e.to_string())?
-            .insert(id, ActiveRecording { child, local_path, started_at, android, touch_capture });
-        Ok(started_at)
+            .insert(id, ActiveRecording { child, local_path, started_at, android, touch_capture, log_capture });
+        Ok(RecordingToggleResult::Started { started_at })
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
@@ -573,74 +851,14 @@ pub async fn stop_device_recording(
     validate(&platform, &device_id)?;
 
     tokio::task::spawn_blocking(move || {
-        let mut recording = app
+        let recording = app
             .state::<Recordings>()
             .0
             .lock()
             .map_err(|e| e.to_string())?
             .remove(&key(&platform, &device_id))
             .ok_or_else(|| "Not recording".to_string())?;
-
-        match &recording.android {
-            None => {
-                // Ctrl-C (SIGINT) makes simctl finalize the file; killing it would corrupt the video
-                let _ = Command::new("kill").args(["-INT", &recording.child.id().to_string()]).output();
-                wait_for_exit(&mut recording.child, STOP_TIMEOUT)?;
-            }
-            Some((serial, remote)) => {
-                // screenrecord runs on the device: interrupt it there so it finishes the file.
-                // It may already have stopped by itself (its time limit), which is fine.
-                let _ = Command::new(adb_binary())
-                    .args(["-s", serial, "shell", "kill -2 $(pidof screenrecord)"])
-                    .output();
-                wait_for_exit(&mut recording.child, STOP_TIMEOUT)?;
-
-                run(
-                    Command::new(adb_binary())
-                        .args(["-s", serial, "pull", remote])
-                        .arg(&recording.local_path),
-                    "copy the recording from the emulator",
-                )?;
-                let _ = Command::new(adb_binary()).args(["-s", serial, "shell", "rm", remote]).output();
-            }
-        }
-
-        let original_bytes = std::fs::metadata(&recording.local_path).map(|m| m.len()).unwrap_or(0);
-        if original_bytes == 0 {
-            return Err("The recording is empty".to_string());
-        }
-
-        let options = quick_bar_settings(&app);
-        let (touch_samples, touch_calibration) = if let Some(capture) = recording.touch_capture.take() {
-            capture.stop.store(true, Ordering::Relaxed);
-            std::thread::sleep(Duration::from_millis(40));
-            (
-                capture.samples.lock().map(|samples| samples.clone()).unwrap_or_default(),
-                Some(capture.calibration),
-            )
-        } else {
-            (Vec::new(), None)
-        };
-        if let Some(calibration) = touch_calibration {
-            write_touch_debug(&recording.local_path, calibration, &touch_samples);
-        }
-
-        // Android's recorder already uses a modest bitrate, so shrinking is still simulator-only.
-        // Touches are burned in for both platforms when samples were captured.
-        let apply_shrink_filters = recording.android.is_none() && options.shrink_recordings;
-        let should_process = apply_shrink_filters
-            || (options.recording_show_touches && !touch_samples.is_empty());
-        let final_bytes = if should_process {
-            process_video(&recording.local_path, &options, &touch_samples, apply_shrink_filters).unwrap_or(original_bytes)
-        } else {
-            original_bytes
-        };
-
-        Ok(FinishedRecording {
-            path: recording.local_path.to_string_lossy().to_string(),
-            original_bytes,
-            final_bytes,
-        })
+        finish_recording(recording, &app)
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
@@ -656,6 +874,9 @@ pub fn stop_all(app: &tauri::AppHandle) {
     for (_, mut recording) in recordings.drain() {
         if let Some(capture) = recording.touch_capture.take() {
             capture.stop.store(true, Ordering::Relaxed);
+        }
+        if let Some(mut capture) = recording.log_capture.take() {
+            let _ = stop_log_capture(&mut capture);
         }
         match &recording.android {
             None => {
