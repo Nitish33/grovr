@@ -1711,6 +1711,173 @@ html.dock-root #root { background: transparent; }
 }
 .dock-deeplink-add:hover { opacity: 0.9; }
 
+.dock-design-panel {
+  @apply flex min-w-0 flex-1 flex-col gap-2 overflow-hidden rounded-xl p-2;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+}
+.dock-design-row {
+  @apply grid items-center gap-2 rounded-lg border p-1.5 transition-colors;
+  grid-template-columns: minmax(0, 1fr) auto;
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+}
+.dock-design-row-active {
+  background: hsl(142 70% 45% / 0.14);
+  color: hsl(142 70% 52%);
+  border-color: hsl(142 70% 45% / 0.35);
+}
+.dock-design-toggle {
+  @apply flex h-7 min-w-0 items-center justify-between gap-2 rounded-md px-2 text-left text-xs font-semibold transition-colors;
+  color: inherit;
+}
+.dock-design-toggle:hover { background: hsl(var(--secondary) / 0.55); }
+.dock-design-toggle:focus-visible,
+.dock-design-color:focus-visible { @apply outline-none ring-2 ring-ring; }
+.dock-design-colors { @apply flex items-center gap-1; }
+.dock-design-color {
+  @apply h-5 w-5 rounded-full transition-transform;
+  border: 2px solid hsl(var(--border));
+}
+.dock-design-color:hover { transform: translateY(-1px); }
+.dock-design-color-active {
+  border-color: hsl(var(--foreground));
+  box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--foreground) / 0.28);
+}
+.dock-design-current-color {
+  @apply h-5 w-5 rounded-full;
+  border: 2px solid hsl(var(--border));
+  box-shadow: 0 0 0 2px hsl(var(--background));
+}
+.dock-design-shortcut {
+  @apply flex items-center gap-2 px-1 text-[10px];
+  color: hsl(var(--muted-foreground));
+}
+.dock-design-shortcut span:first-child {
+  @apply rounded border px-1.5 py-0.5 font-semibold;
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+html.design-overlay-root,
+html.design-overlay-root body,
+html.design-overlay-root #root {
+  @apply h-full overflow-hidden;
+  background: transparent;
+}
+.design-overlay {
+  @apply relative h-screen w-screen overflow-hidden;
+  background: transparent;
+  outline: none;
+  pointer-events: none;
+}
+.design-overlay-picking {
+  cursor: crosshair;
+  pointer-events: auto;
+}
+.design-pick-hint {
+  @apply absolute left-1/2 top-8 z-50 -translate-x-1/2 rounded-full px-3 py-1 text-[10px] font-semibold shadow-lg;
+  background: hsl(220 10% 8% / 0.86);
+  color: white;
+  border: 1px solid hsl(0 0% 100% / 0.24);
+  pointer-events: none;
+}
+.design-pick-magnifier {
+  @apply absolute z-50 flex items-center gap-1.5 rounded-lg p-1 shadow-xl;
+  width: 118px;
+  height: 108px;
+  background: hsl(220 10% 8% / 0.88);
+  border: 1px solid hsl(0 0% 100% / 0.24);
+  pointer-events: none;
+}
+.design-pick-grid {
+  @apply grid overflow-hidden rounded;
+  width: 100px;
+  height: 100px;
+  border: 1px solid hsl(0 0% 100% / 0.5);
+  image-rendering: pixelated;
+}
+.design-pick-grid span { @apply block min-h-0 min-w-0; }
+.design-pick-pixel-center {
+  box-shadow: inset 0 0 0 1px white, inset 0 0 0 2px black;
+}
+.design-pick-swatch {
+  @apply h-6 w-2 rounded-full;
+  border: 1px solid hsl(0 0% 100% / 0.45);
+}
+.design-ruler {
+  @apply absolute z-20 overflow-hidden;
+  background: hsl(220 10% 8% / 0.76);
+  color: white;
+  border-color: hsl(0 0% 100% / 0.2);
+  pointer-events: auto;
+}
+.design-ruler-top,
+.design-ruler-bottom { @apply left-0 right-0 h-6 cursor-crosshair; }
+.design-ruler-top { @apply top-0 border-b; }
+.design-ruler-bottom { @apply bottom-0 border-t; }
+.design-ruler-left,
+.design-ruler-right { @apply top-0 bottom-0 w-6 cursor-crosshair; }
+.design-ruler-left { @apply left-0 border-r; }
+.design-ruler-right { @apply right-0 border-l; }
+.design-ruler-tick {
+  @apply absolute block;
+  background: hsl(0 0% 100% / 0.55);
+}
+.design-ruler-top .design-ruler-tick,
+.design-ruler-bottom .design-ruler-tick {
+  @apply bottom-0 w-px h-2;
+}
+.design-ruler-left .design-ruler-tick,
+.design-ruler-right .design-ruler-tick {
+  @apply right-0 h-px w-2;
+}
+.design-ruler-top .design-ruler-tick-major,
+.design-ruler-bottom .design-ruler-tick-major { @apply h-4; }
+.design-ruler-left .design-ruler-tick-major,
+.design-ruler-right .design-ruler-tick-major { @apply w-4; }
+.design-ruler-tick span {
+  @apply absolute text-[8px] font-mono leading-none;
+  color: hsl(0 0% 100% / 0.78);
+}
+.design-ruler-top .design-ruler-tick span { @apply left-1 top-1; }
+.design-ruler-bottom .design-ruler-tick span { @apply left-1 bottom-1; }
+.design-ruler-left .design-ruler-tick span,
+.design-ruler-right .design-ruler-tick span {
+  @apply left-1 top-1 origin-left;
+  transform: rotate(90deg);
+}
+.design-guide {
+  @apply absolute z-30 rounded-none border-0 p-0 opacity-90 shadow-lg;
+  pointer-events: auto;
+}
+.design-guide-vertical {
+  @apply top-0 h-full w-1 cursor-ew-resize;
+}
+.design-guide-horizontal {
+  @apply left-0 h-1 w-full cursor-ns-resize;
+}
+.design-guide-delete {
+  @apply absolute z-40 flex h-8 w-8 items-center justify-center rounded-lg shadow-xl;
+  background: hsl(var(--card));
+  color: hsl(var(--destructive));
+  border: 1px solid hsl(var(--border));
+  pointer-events: auto;
+}
+.design-guide-delete:hover { background: hsl(var(--destructive) / 0.12); }
+.design-guide-delete:focus-visible { @apply outline-none ring-2 ring-ring; }
+.design-measure {
+  @apply absolute z-50 rounded-full px-2 py-1 text-[10px] font-semibold shadow-lg;
+  background: hsl(220 10% 8% / 0.86);
+  color: white;
+  border: 1px solid hsl(0 0% 100% / 0.24);
+  pointer-events: none;
+}
+.design-measure-horizontal { transform: translateX(-50%); }
+.design-measure-vertical { transform: translateY(-50%); }
+
 /* Quick bar settings window */
 .qb-layout { @apply grid h-full; grid-template-columns: 200px minmax(0, 1fr); }
 .qb-nav {

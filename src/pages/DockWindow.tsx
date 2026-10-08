@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import {
   AlertCircle,
   Camera,
@@ -10,8 +11,10 @@ import {
   Link,
   LoaderCircle,
   MousePointer2,
+  Pipette,
   Plus,
   RefreshCw,
+  Ruler,
   Zap,
   ScrollText,
   Settings,
@@ -28,8 +31,14 @@ import { formatSize } from "@/lib/format";
 import type { DeepLink, DevicePlatform } from "@/lib/api";
 
 const FEEDBACK_MS = 1600;
-const DOCK_COLLAPSED_SIZE = { width: 48, height: 292 };
+const DOCK_COLLAPSED_SIZE = { width: 48, height: 324 };
 const DOCK_EXPANDED_SIZE = { width: 360, height: DOCK_COLLAPSED_SIZE.height };
+const DESIGN_COLORS = [
+  { name: "Green", value: "#4ade80" },
+  { name: "Blue", value: "#60a5fa" },
+  { name: "Pink", value: "#f472b6" },
+  { name: "Yellow", value: "#facc15" },
+];
 
 interface DockAction {
   id: string;
@@ -71,6 +80,11 @@ export function DockWindow() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recording, setRecording] = useState<RecordingState>("idle");
   const [linksOpen, setLinksOpen] = useState(false);
+  const [designOpen, setDesignOpen] = useState(false);
+  const [alignmentActive, setAlignmentActive] = useState(false);
+  const alignmentActiveRef = useRef(false);
+  const [colorPicking, setColorPicking] = useState(false);
+  const [designColor, setDesignColor] = useState(DESIGN_COLORS[0].value);
   const [pointerActive, setPointerActive] = useState(false);
   const [deepLinks, setDeepLinks] = useState<DeepLink[]>([]);
   const [apps, setApps] = useState<string[]>([]);
@@ -99,15 +113,55 @@ export function DockWindow() {
   );
 
   useEffect(() => {
+    const expanded = linksOpen || designOpen;
     getCurrentWindow()
       .setSize(
         new LogicalSize(
-          linksOpen ? DOCK_EXPANDED_SIZE.width : DOCK_COLLAPSED_SIZE.width,
-          linksOpen ? DOCK_EXPANDED_SIZE.height : DOCK_COLLAPSED_SIZE.height,
+          expanded ? DOCK_EXPANDED_SIZE.width : DOCK_COLLAPSED_SIZE.width,
+          expanded ? DOCK_EXPANDED_SIZE.height : DOCK_COLLAPSED_SIZE.height,
         ),
       )
       .catch((err) => console.error("Failed to resize quick bar:", err));
-  }, [linksOpen]);
+  }, [linksOpen, designOpen]);
+
+  useEffect(
+    () => () => {
+      void api.hideDesignOverlay(platform, deviceId);
+    },
+    [platform, deviceId],
+  );
+
+  useEffect(() => {
+    alignmentActiveRef.current = alignmentActive;
+  }, [alignmentActive]);
+
+  useEffect(() => {
+    let unlistenPicked: (() => void) | undefined;
+    let unlistenCancelled: (() => void) | undefined;
+    listen<string>("design-color-picked", async (event) => {
+      setColorPicking(false);
+      setDesignColor(event.payload);
+      if (alignmentActiveRef.current) {
+        await api.showDesignOverlay(platform, deviceId, event.payload);
+      } else {
+        await api.hideDesignOverlay(platform, deviceId);
+      }
+    }).then((cleanup) => {
+      unlistenPicked = cleanup;
+    }).catch((err) => console.error("Failed to listen for picked design color:", err));
+    listen("design-color-pick-cancelled", async () => {
+      setColorPicking(false);
+      if (!alignmentActiveRef.current) {
+        await api.hideDesignOverlay(platform, deviceId);
+      }
+    }).then((cleanup) => {
+      unlistenCancelled = cleanup;
+    }).catch((err) => console.error("Failed to listen for design color cancellation:", err));
+    return () => {
+      unlistenPicked?.();
+      unlistenCancelled?.();
+    };
+  }, [platform, deviceId]);
 
   useEffect(() => {
     api
@@ -154,6 +208,51 @@ export function DockWindow() {
     api
       .showDeviceToast(message, kind, sticky)
       .catch((err) => console.error("Failed to show the toast:", err));
+
+  const closeDesignPanel = async () => {
+    setDesignOpen(false);
+    setAlignmentActive(false);
+    setColorPicking(false);
+    await api.hideDesignOverlay(platform, deviceId);
+  };
+
+  const toggleLinksPanel = async () => {
+    if (!linksOpen) await closeDesignPanel();
+    setLinksOpen((open) => !open);
+  };
+
+  const toggleDesignPanel = async () => {
+    if (designOpen) {
+      await closeDesignPanel();
+      return;
+    }
+    setLinksOpen(false);
+    setPackagePickerOpen(false);
+    setAddOpen(false);
+    setDesignOpen(true);
+  };
+
+  const toggleAlignment = async () => {
+    if (alignmentActive) {
+      setAlignmentActive(false);
+      await api.hideDesignOverlay(platform, deviceId);
+      return;
+    }
+    setAlignmentActive(true);
+    await api.showDesignOverlay(platform, deviceId, designColor);
+  };
+
+  const chooseDesignColor = async (color: string) => {
+    setDesignColor(color);
+    if (alignmentActive) {
+      await api.showDesignOverlay(platform, deviceId, color);
+    }
+  };
+
+  const startColorPicker = async () => {
+    setColorPicking(true);
+    await api.showDesignOverlay(platform, deviceId, designColor, true, true);
+  };
 
   const saveDeepLinks = async (next: DeepLink[]) => {
     setDeepLinks(next);
@@ -346,7 +445,7 @@ export function DockWindow() {
       label: "Deep links",
       icon: Link,
       run: async () => {
-        setLinksOpen((open) => !open);
+        await toggleLinksPanel();
         return null;
       },
       selfReporting: true,
@@ -356,6 +455,16 @@ export function DockWindow() {
       label: "Open last deep link",
       icon: Zap,
       run: openLastDeepLink,
+    },
+    {
+      id: "design",
+      label: "Design tools",
+      icon: Ruler,
+      run: async () => {
+        await toggleDesignPanel();
+        return null;
+      },
+      selfReporting: true,
     },
     {
       id: "relaunch-app",
@@ -416,6 +525,7 @@ export function DockWindow() {
           const isRecord = action.id === "record";
           const isEnabled =
             (action.id === "open-url" && linksOpen) ||
+            (action.id === "design" && designOpen) ||
             (action.id === "pointer-location" && pointerActive);
           const recordBusy =
             isRecord &&
@@ -607,6 +717,53 @@ export function DockWindow() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {designOpen && (
+        <div className="dock-design-panel" aria-label="Design tools">
+          <div className={`dock-design-row ${alignmentActive ? "dock-design-row-active" : ""}`}>
+            <button
+              className="dock-design-toggle"
+              onClick={() => void toggleAlignment()}
+              aria-pressed={alignmentActive}
+            >
+              <span>Alignment</span>
+              {alignmentActive && <Check size={13} />}
+            </button>
+            <div className="dock-design-colors" aria-label="Alignment guide color">
+              {DESIGN_COLORS.map((color) => (
+                <button
+                  key={color.value}
+                  className={`dock-design-color ${designColor === color.value ? "dock-design-color-active" : ""}`}
+                  style={{ background: color.value }}
+                  title={color.name}
+                  aria-label={color.name}
+                  onClick={() => void chooseDesignColor(color.value)}
+                />
+              ))}
+            </div>
+          </div>
+          <div className={`dock-design-row ${colorPicking ? "dock-design-row-active" : ""}`}>
+            <button
+              className="dock-design-toggle"
+              onClick={() => void startColorPicker()}
+              aria-pressed={colorPicking}
+            >
+              <span>Color picker</span>
+              <Pipette size={13} />
+            </button>
+            <span
+              className="dock-design-current-color"
+              style={{ background: designColor }}
+              title={designColor}
+              aria-label={`Current color ${designColor}`}
+            />
+          </div>
+          <div className="dock-design-shortcut">
+            <span>Shift</span>
+            <span>Show spacing</span>
+          </div>
         </div>
       )}
     </div>

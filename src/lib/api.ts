@@ -309,6 +309,40 @@ export async function openQuickBarSettings(): Promise<void> {
   return invoke('open_quick_bar_settings');
 }
 
+export async function showDesignOverlay(
+  platform: DevicePlatform,
+  deviceId: string,
+  color: string,
+  pickColor = false,
+  pickOnly = false,
+): Promise<void> {
+  return invoke('show_design_overlay', { platform, deviceId, color, pickColor, pickOnly });
+}
+
+export async function hideDesignOverlay(platform: DevicePlatform, deviceId: string): Promise<void> {
+  return invoke('hide_design_overlay', { platform, deviceId });
+}
+
+export async function pickDesignColor(platform: DevicePlatform, deviceId: string, x: number, y: number): Promise<string> {
+  return invoke('pick_design_color', { platform, deviceId, x, y });
+}
+
+export interface DesignColorPreview {
+  width: number;
+  height: number;
+  center: string;
+  pixels: string[];
+}
+
+export async function previewDesignColor(
+  platform: DevicePlatform,
+  deviceId: string,
+  x: number,
+  y: number,
+): Promise<DesignColorPreview> {
+  return invoke('preview_design_color', { platform, deviceId, x, y });
+}
+
 export interface RecordingFile {
   name: string;
   path: string;

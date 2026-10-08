@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { DockWindow } from "./pages/DockWindow";
+import { DesignOverlayWindow } from "./pages/DesignOverlayWindow";
 import { LogsWindow } from "./pages/LogsWindow";
 import { PointerIndicatorWindow } from "./pages/PointerIndicatorWindow";
 import { QuickBarSettingsWindow } from "./pages/QuickBarSettingsWindow";
@@ -22,6 +23,8 @@ function Root() {
       return <LogsWindow />;
     case "dock":
       return <DockWindow />;
+    case "design-overlay":
+      return <DesignOverlayWindow />;
     case "toast":
       return <ToastWindow />;
     case "recording":

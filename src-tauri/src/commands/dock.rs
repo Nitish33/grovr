@@ -8,10 +8,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const DOCK_WIDTH: f64 = 48.0;
-const DOCK_HEIGHT: f64 = 292.0;
+const DOCK_HEIGHT: f64 = 324.0;
 /// Size and lifetime of the toast shown over the centre of the device window
 const TOAST_WIDTH: f64 = 320.0;
 const TOAST_HEIGHT: f64 = 48.0;
@@ -41,6 +41,10 @@ fn dock_label(platform: &str, device_id: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
     format!("dock-{}-{}", platform, id)
+}
+
+fn design_overlay_label(platform: &str, device_id: &str) -> String {
+    format!("dock-design-overlay-{}", dock_label(platform, device_id))
 }
 
 pub(crate) fn device_rect(app: &tauri::AppHandle, platform: &str, device_id: &str) -> Option<(f64, f64, f64, f64)> {
@@ -676,6 +680,12 @@ mod follow {
         }
     }
 
+    pub fn place_over_device(target: &tauri::WebviewWindow, rect: (f64, f64, f64, f64)) {
+        let (x, y, w, h) = rect;
+        let _ = target.set_size(tauri::LogicalSize::new(w, h));
+        place_top_left(target, x, y);
+    }
+
     /// Shows the "recording" pill near the top of the device window the calling bar is docked to.
     pub fn show_indicator(bar: &tauri::WebviewWindow, started_at: u64) -> Result<(), String> {
         let app = bar.app_handle().clone();
@@ -764,6 +774,11 @@ mod follow {
                     if let Some(indicator) = window.app_handle().get_webview_window(&indicator_label(window.label())) {
                         let _ = indicator.hide();
                     }
+                    if let Some(overlay) =
+                        window.app_handle().get_webview_window(&format!("dock-design-overlay-{}", window.label()))
+                    {
+                        let _ = overlay.hide();
+                    }
                     shown = false;
                     debug("device window not on screen: bar hidden");
                 }
@@ -795,6 +810,11 @@ mod follow {
                         device.x + device.w / 2.0 - INDICATOR_WIDTH / 2.0,
                         device.y + INDICATOR_TOP_MARGIN,
                     );
+                }
+                let overlay_label = format!("dock-design-overlay-{}", window.label());
+                if let Some(overlay) = window.app_handle().get_webview_window(&overlay_label) {
+                    place_over_device(&overlay, (device.x, device.y, device.w, device.h));
+                    let _ = overlay.show();
                 }
                 debug(&format!(
                     "device window #{} '{}' at ({}, {}) {}x{}, bar anchored at right edge {}",
@@ -833,6 +853,9 @@ mod follow {
             rects.remove(window.label());
         }
         hide_pointer_indicator(&window);
+        if let Some(overlay) = window.app_handle().get_webview_window(&format!("dock-design-overlay-{}", window.label())) {
+            let _ = overlay.close();
+        }
         hide_indicator(&window);
     }
 }
@@ -845,6 +868,203 @@ pub fn place_beside_bar(target: &tauri::WebviewWindow, bar: &tauri::WebviewWindo
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (target, bar);
+}
+
+#[tauri::command]
+pub async fn show_design_overlay(
+    app: tauri::AppHandle,
+    platform: String,
+    device_id: String,
+    color: String,
+    pick_color: Option<bool>,
+    pick_only: Option<bool>,
+) -> Result<(), String> {
+    validate(&platform, &device_id)?;
+    let label = design_overlay_label(&platform, &device_id);
+    let rect = device_rect(&app, &platform, &device_id).ok_or_else(|| "Quick bar is not attached to a device".to_string())?;
+    let pick = pick_color.unwrap_or(false);
+    let picker_only = pick_only.unwrap_or(false);
+
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.emit("design-overlay-color", color);
+        #[cfg(target_os = "macos")]
+        follow::place_over_device(&existing, rect);
+        existing.show().map_err(|e| e.to_string())?;
+        if pick {
+            let _ = existing.emit("design-start-color-pick", serde_json::json!({
+                "platform": platform,
+                "deviceId": device_id,
+                "pickOnly": picker_only,
+            }));
+        }
+        return Ok(());
+    }
+
+    let url = format!(
+        "index.html?view=design-overlay&color={}&platform={}&id={}&pick={}&pickOnly={}",
+        percent_encode(&color),
+        percent_encode(&platform),
+        percent_encode(&device_id),
+        if pick { "1" } else { "0" },
+        if picker_only { "1" } else { "0" },
+    );
+    let overlay = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+        .title("Alignment guides")
+        .inner_size(rect.2, rect.3)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .accept_first_mouse(true)
+        .focused(false)
+        .visible(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "macos")]
+    follow::place_over_device(&overlay, rect);
+    overlay.show().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn hide_design_overlay(app: tauri::AppHandle, platform: String, device_id: String) -> Result<(), String> {
+    validate(&platform, &device_id)?;
+    if let Some(overlay) = app.get_webview_window(&design_overlay_label(&platform, &device_id)) {
+        overlay.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn pick_design_color(
+    app: tauri::AppHandle,
+    platform: String,
+    device_id: String,
+    x: f64,
+    y: f64,
+) -> Result<String, String> {
+    validate(&platform, &device_id)?;
+    #[cfg(target_os = "macos")]
+    {
+        pick_design_color_preview_macos(&app, &platform, &device_id, x, y, 0).map(|preview| preview.center)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, x, y);
+        Err("Design color picker is only available on macOS".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn preview_design_color(
+    app: tauri::AppHandle,
+    platform: String,
+    device_id: String,
+    x: f64,
+    y: f64,
+) -> Result<DesignColorPreview, String> {
+    validate(&platform, &device_id)?;
+    #[cfg(target_os = "macos")]
+    {
+        pick_design_color_preview_macos(&app, &platform, &device_id, x, y, 5)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, x, y);
+        Err("Design color picker is only available on macOS".to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn pick_design_color_preview_macos(
+    app: &tauri::AppHandle,
+    platform: &str,
+    device_id: &str,
+    x: f64,
+    y: f64,
+    radius: i32,
+) -> Result<DesignColorPreview, String> {
+    use core_graphics::geometry::{CGPoint, CGRect, CGSize};
+    use core_graphics::window::{
+        create_image, kCGWindowImageNominalResolution, kCGWindowListOptionOnScreenBelowWindow,
+    };
+    use objc::{msg_send, runtime::Object, sel, sel_impl};
+
+    let (device_x, device_y, device_w, device_h) =
+        device_rect(app, platform, device_id).ok_or_else(|| "Quick bar is not attached to a device".to_string())?;
+    if x < 0.0 || y < 0.0 || x > device_w || y > device_h {
+        return Err("Pick a pixel inside the device window".to_string());
+    }
+
+    let overlay = app
+        .get_webview_window(&design_overlay_label(platform, device_id))
+        .ok_or_else(|| "Alignment overlay is not open".to_string())?;
+    let ns_window = overlay.ns_window().map_err(|e| e.to_string())? as *mut Object;
+    if ns_window.is_null() {
+        return Err("Could not read the overlay window".to_string());
+    }
+    let overlay_number: i64 = unsafe { msg_send![ns_window, windowNumber] };
+    if overlay_number <= 0 || overlay_number > u32::MAX as i64 {
+        return Err("Could not read the overlay window number".to_string());
+    }
+
+    let radius = radius.max(0) as f64;
+    let origin_x = (device_x + x - radius).max(device_x);
+    let origin_y = (device_y + y - radius).max(device_y);
+    let end_x = (device_x + x + radius + 1.0).min(device_x + device_w);
+    let end_y = (device_y + y + radius + 1.0).min(device_y + device_h);
+    let capture_w = (end_x - origin_x).max(1.0);
+    let capture_h = (end_y - origin_y).max(1.0);
+    let rect = CGRect::new(
+        &CGPoint::new(origin_x, origin_y),
+        &CGSize::new(capture_w, capture_h),
+    );
+    let image = create_image(
+        rect,
+        kCGWindowListOptionOnScreenBelowWindow,
+        overlay_number as u32,
+        kCGWindowImageNominalResolution,
+    )
+    .ok_or_else(|| "Could not capture that pixel. macOS Screen Recording permission may be required.".to_string())?;
+
+    let width = image.width().max(1) as usize;
+    let height = image.height().max(1) as usize;
+    let bytes_per_pixel = (image.bits_per_pixel() / 8).max(1) as usize;
+    let bytes_per_row = image.bytes_per_row() as usize;
+    let data = image.data();
+    let bytes = data.bytes();
+    let pixel = |px: usize, py: usize| -> Result<String, String> {
+        let index = py * bytes_per_row + px * bytes_per_pixel;
+        if bytes.len() < index + bytes_per_pixel.min(4) {
+            return Err("Could not read that pixel".to_string());
+        }
+        let (r, g, b) = if bytes_per_pixel >= 4 {
+            // CoreGraphics screen captures on macOS are usually BGRA in memory.
+            (bytes[index + 2], bytes[index + 1], bytes[index])
+        } else if bytes_per_pixel >= 3 {
+            (bytes[index], bytes[index + 1], bytes[index + 2])
+        } else {
+            let value = bytes[index];
+            (value, value, value)
+        };
+        Ok(format!("#{:02x}{:02x}{:02x}", r, g, b))
+    };
+
+    let scale_x = width as f64 / capture_w;
+    let scale_y = height as f64 / capture_h;
+    let center_x = ((device_x + x - origin_x) * scale_x).floor().clamp(0.0, (width - 1) as f64) as usize;
+    let center_y = ((device_y + y - origin_y) * scale_y).floor().clamp(0.0, (height - 1) as f64) as usize;
+    let center = pixel(center_x, center_y)?;
+    let mut pixels = Vec::with_capacity(width * height);
+    for py in 0..height {
+        for px in 0..width {
+            pixels.push(pixel(px, py)?);
+        }
+    }
+
+    Ok(DesignColorPreview { width, height, center, pixels })
 }
 
 /// Shows a toast over the centre of the device the calling quick bar is docked to.
@@ -1169,6 +1389,14 @@ pub struct ScreenshotFile {
     pub path: String,
     pub size: u64,
     pub modified_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DesignColorPreview {
+    pub width: usize,
+    pub height: usize,
+    pub center: String,
+    pub pixels: Vec<String>,
 }
 
 fn screenshot_path(path: &str) -> Result<PathBuf, String> {
