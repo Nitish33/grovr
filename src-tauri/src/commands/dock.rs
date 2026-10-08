@@ -277,6 +277,7 @@ mod follow {
             // run_follow_loop), so windows opened from it (logs, settings) can sit above the bar
             .skip_taskbar(true)
             .resizable(true)
+            .accept_first_mouse(true)
             .focused(false)
             .visible(false)
             .build()
@@ -1103,6 +1104,12 @@ fn relaunch_current_app(ios: bool, device_id: &str) -> Result<String, String> {
 }
 
 /// A new file in the temp folder for a screenshot on its way to the clipboard.
+fn screenshots_dir() -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join("grovr-screenshots");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create a temp folder: {}", e))?;
+    Ok(dir)
+}
+
 fn screenshot_temp_path(device_id: &str) -> Result<PathBuf, String> {
     let name: String = device_id
         .chars()
@@ -1112,8 +1119,7 @@ fn screenshot_temp_path(device_id: &str) -> Result<PathBuf, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let dir = std::env::temp_dir().join("grovr-screenshots");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create a temp folder: {}", e))?;
+    let dir = screenshots_dir()?;
     Ok(dir.join(format!("{}-{}.png", name, millis)))
 }
 
@@ -1155,6 +1161,101 @@ fn save_screenshot_to_desktop(screenshot: &std::path::Path) {
         return;
     };
     let _ = std::fs::copy(screenshot, PathBuf::from(home).join("Desktop").join(name));
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScreenshotFile {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub modified_ms: u64,
+}
+
+fn screenshot_path(path: &str) -> Result<PathBuf, String> {
+    let dir = screenshots_dir()?.canonicalize().map_err(|e| e.to_string())?;
+    let file = PathBuf::from(path).canonicalize().map_err(|_| "That screenshot no longer exists".to_string())?;
+    if file.parent() != Some(dir.as_path()) || !file.is_file() || file.extension().and_then(|ext| ext.to_str()) != Some("png") {
+        return Err("Not a saved screenshot".to_string());
+    }
+    Ok(file)
+}
+
+#[tauri::command]
+pub async fn list_screenshots() -> Result<Vec<ScreenshotFile>, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = screenshots_dir()?;
+        let mut files: Vec<ScreenshotFile> = std::fs::read_dir(&dir)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .filter_map(|entry| {
+                let metadata = entry.metadata().ok().filter(|m| m.is_file())?;
+                let path = entry.path();
+                if path.extension().and_then(|ext| ext.to_str()) != Some("png") {
+                    return None;
+                }
+                let modified_ms = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                Some(ScreenshotFile {
+                    name: entry.file_name().to_string_lossy().to_string(),
+                    path: path.to_string_lossy().to_string(),
+                    size: metadata.len(),
+                    modified_ms,
+                })
+            })
+            .collect();
+        files.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+        Ok(files)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn delete_screenshot(path: String) -> Result<(), String> {
+    let file = screenshot_path(&path)?;
+    std::fs::remove_file(file).map_err(|e| format!("Failed to delete the screenshot: {}", e))
+}
+
+#[tauri::command]
+pub async fn delete_all_screenshots() -> Result<u32, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = screenshots_dir()?;
+        let mut deleted = 0;
+        for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+            let path = entry.path();
+            if path.is_file()
+                && path.extension().and_then(|ext| ext.to_str()) == Some("png")
+                && std::fs::remove_file(&path).is_ok()
+            {
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn open_screenshot(path: String) -> Result<(), String> {
+    let file = screenshot_path(&path)?;
+    run(Command::new("open").arg(file), "open the screenshot").map(|_| ())
+}
+
+#[tauri::command]
+pub async fn reveal_screenshot(path: String) -> Result<(), String> {
+    let file = screenshot_path(&path)?;
+    run(Command::new("open").arg("-R").arg(file), "show the screenshot in Finder").map(|_| ())
+}
+
+#[tauri::command]
+pub async fn copy_screenshot(path: String) -> Result<(), String> {
+    let file = screenshot_path(&path)?;
+    copy_png_to_clipboard(&file)
 }
 
 /// Only plain URLs / deep links: a scheme, no whitespace or control characters.
@@ -1212,8 +1313,6 @@ pub async fn device_quick_action(
                     }
                     copy_png_to_clipboard(&path)
                 })();
-                // The clipboard holds its own copy of the image
-                let _ = std::fs::remove_file(&path);
                 result?;
                 Ok(None)
             }

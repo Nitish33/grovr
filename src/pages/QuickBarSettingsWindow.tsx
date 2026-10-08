@@ -22,8 +22,9 @@ import { useCurrentRunningApp } from '@/hooks/useCurrentRunningApp';
 import { useInstalledApps } from '@/hooks/useInstalledApps';
 import { useQuickBarSettings } from '@/hooks/useQuickBarSettings';
 import { useRecordings } from '@/hooks/useRecordings';
+import { useScreenshots } from '@/hooks/useScreenshots';
 import * as api from '@/lib/api';
-import type { AppPermission, DeepLink, DevicePlatform, InstalledApp, QuickBarSettings, RecordingFile } from '@/lib/api';
+import type { AppPermission, DeepLink, DevicePlatform, InstalledApp, QuickBarSettings, RecordingFile, ScreenshotFile } from '@/lib/api';
 import { formatSize } from '@/lib/format';
 
 type Section = 'screenshot' | 'recording' | 'deeplinks' | 'permissions';
@@ -162,6 +163,26 @@ function ScreenshotSection({
   settings: QuickBarSettings;
   update: (patch: Partial<QuickBarSettings>) => void;
 }) {
+  const { screenshots, loading, error, refresh, remove, removeAll } = useScreenshots();
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const totalBytes = screenshots.reduce((sum, screenshot) => sum + screenshot.size, 0);
+
+  useEffect(() => {
+    if (!copiedPath) return;
+    const timer = setTimeout(() => setCopiedPath(null), 1200);
+    return () => clearTimeout(timer);
+  }, [copiedPath]);
+
+  const copyImage = async (screenshot: ScreenshotFile) => {
+    try {
+      await api.copyScreenshot(screenshot.path);
+      setCopiedPath(screenshot.path);
+    } catch (err) {
+      console.error('Failed to copy the screenshot:', err);
+    }
+  };
+
   return (
     <div className="qb-section">
       <h2 className="qb-heading">Screenshot</h2>
@@ -177,7 +198,121 @@ function ScreenshotSection({
           />
         </Row>
       </div>
+
+      <div className="qb-list-header">
+        <h3 className="qb-subheading">
+          Saved screenshots
+          <span className="qb-count">
+            {screenshots.length} · {formatSize(totalBytes)}
+          </span>
+        </h3>
+        <div className="qb-list-actions">
+          <button className="json-button" onClick={() => void refresh()} title="Refresh the list">
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+          <button
+            className="json-button"
+            onClick={() => setConfirmDeleteAll(true)}
+            disabled={screenshots.length === 0}
+            title="Delete all saved screenshots"
+          >
+            <Trash2 size={12} />
+            <span>Delete all</span>
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="qb-notice" role="alert">
+          {error}
+        </div>
+      )}
+      {!loading && screenshots.length === 0 && <div className="devices-message">No saved screenshots.</div>}
+      <ul className="qb-recordings">
+        {screenshots.map((screenshot) => (
+          <ScreenshotRow
+            key={screenshot.path}
+            screenshot={screenshot}
+            onCopy={(item) => void copyImage(item)}
+            onDelete={(item) => void remove(item.path)}
+            copied={copiedPath === screenshot.path}
+          />
+        ))}
+      </ul>
+
+      <ConfirmModal
+        open={confirmDeleteAll}
+        onOpenChange={setConfirmDeleteAll}
+        title="Delete all screenshots?"
+        description={`${screenshots.length} screenshots will be deleted. This can't be undone.`}
+        confirmLabel="Delete all"
+        variant="destructive"
+        onConfirm={() => void removeAll()}
+        onCancel={() => setConfirmDeleteAll(false)}
+      />
     </div>
+  );
+}
+
+function ScreenshotRow({
+  screenshot,
+  onCopy,
+  onDelete,
+  copied,
+}: {
+  screenshot: ScreenshotFile;
+  onCopy: (screenshot: ScreenshotFile) => void;
+  onDelete: (screenshot: ScreenshotFile) => void;
+  copied: boolean;
+}) {
+  const act = (action: () => Promise<void>) => action().catch((err) => console.error(err));
+  return (
+    <li className="qb-recording">
+      <div className="qb-recording-main">
+        <div className="qb-recording-name" title={screenshot.path}>
+          {screenshot.name}
+        </div>
+        <div className="qb-recording-meta">
+          {new Date(screenshot.modified_ms).toLocaleString()} · {formatSize(screenshot.size)}
+        </div>
+      </div>
+      <div className="qb-recording-actions">
+        <button
+          className="json-button"
+          onClick={() => act(() => api.openScreenshot(screenshot.path))}
+          title="Open in the default image viewer"
+          aria-label={`Open ${screenshot.name}`}
+        >
+          <Play size={12} />
+        </button>
+        <button
+          className="json-button"
+          onClick={() => onCopy(screenshot)}
+          title="Copy the image"
+          aria-label={`Copy ${screenshot.name}`}
+        >
+          <Copy size={12} />
+          {copied && <span>Copied</span>}
+        </button>
+        <button
+          className="json-button"
+          onClick={() => act(() => api.revealScreenshot(screenshot.path))}
+          title="Show in Finder"
+          aria-label={`Show ${screenshot.name} in Finder`}
+        >
+          <FolderOpen size={12} />
+        </button>
+        <button
+          className="json-button"
+          onClick={() => onDelete(screenshot)}
+          title="Delete"
+          aria-label={`Delete ${screenshot.name}`}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </li>
   );
 }
 

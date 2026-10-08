@@ -26,7 +26,8 @@ use commands::recording::{
 };
 use commands::dock::{
     toggle_device_dock, device_quick_action, show_device_toast, show_recording_indicator,
-    hide_recording_indicator, open_running_device_docks,
+    hide_recording_indicator, open_running_device_docks, list_screenshots, delete_screenshot,
+    delete_all_screenshots, open_screenshot, reveal_screenshot, copy_screenshot,
 };
 use commands::logs::{open_log_window, start_log_stream, save_log_snapshot, list_android_processes, list_user_apps};
 use commands::devices::{
@@ -224,6 +225,12 @@ pub fn run() {
             show_device_toast,
             show_recording_indicator,
             hide_recording_indicator,
+            list_screenshots,
+            delete_screenshot,
+            delete_all_screenshots,
+            open_screenshot,
+            reveal_screenshot,
+            copy_screenshot,
             start_device_recording,
             stop_device_recording,
             device_recording_started_at,

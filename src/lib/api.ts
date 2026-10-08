@@ -319,6 +319,39 @@ export interface RecordingFile {
   in_progress: boolean;
 }
 
+export interface ScreenshotFile {
+  name: string;
+  path: string;
+  size: number;
+  /** Last modified, ms since the Unix epoch */
+  modified_ms: number;
+}
+
+/** Saved screenshots, newest first. */
+export async function listScreenshots(): Promise<ScreenshotFile[]> {
+  return invoke('list_screenshots');
+}
+
+export async function deleteScreenshot(path: string): Promise<void> {
+  return invoke('delete_screenshot', { path });
+}
+
+export async function deleteAllScreenshots(): Promise<number> {
+  return invoke('delete_all_screenshots');
+}
+
+export async function openScreenshot(path: string): Promise<void> {
+  return invoke('open_screenshot', { path });
+}
+
+export async function revealScreenshot(path: string): Promise<void> {
+  return invoke('reveal_screenshot', { path });
+}
+
+export async function copyScreenshot(path: string): Promise<void> {
+  return invoke('copy_screenshot', { path });
+}
+
 /** Saved recordings, newest first. */
 export async function listRecordings(): Promise<RecordingFile[]> {
   return invoke('list_recordings');
