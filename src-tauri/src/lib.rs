@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
@@ -26,7 +26,7 @@ use commands::recording::{
 };
 use commands::dock::{
     toggle_device_dock, device_quick_action, show_device_toast, show_recording_indicator,
-    hide_recording_indicator,
+    hide_recording_indicator, open_running_device_docks,
 };
 use commands::logs::{open_log_window, start_log_stream, save_log_snapshot, list_android_processes, list_user_apps};
 use commands::devices::{
@@ -121,6 +121,13 @@ pub fn run() {
             app.manage(commands::recording::Recordings::default());
             // A previous run may have been killed mid-recording
             std::thread::spawn(commands::recording::stop_orphans);
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+                if let Err(err) = commands::dock::open_running_device_docks(handle).await {
+                    eprintln!("[dock] failed to open running device quick bars: {}", err);
+                }
+            });
 
             // Apply window effects
             setup_window_effects(app)?;
@@ -206,6 +213,7 @@ pub fn run() {
             open_quick_bar_settings,
             open_log_window,
             toggle_device_dock,
+            open_running_device_docks,
             device_quick_action,
             show_device_toast,
             show_recording_indicator,
@@ -232,6 +240,17 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 commands::recording::stop_all(app_handle);
+            }
+
+            if let tauri::RunEvent::WindowEvent { label, event, .. } = &event {
+                if label == "main" && matches!(event, WindowEvent::Focused(true)) {
+                    let handle = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(err) = commands::dock::open_running_device_docks(handle).await {
+                            eprintln!("[dock] failed to open running device quick bars on focus: {}", err);
+                        }
+                    });
+                }
             }
 
             // macOS: Show window when dock icon is clicked (Reopen event)

@@ -1,7 +1,7 @@
 //! A small always-on-top quick-actions bar that docks beside a running simulator/emulator
 //! window and follows it around. macOS only: window positions come from CoreGraphics.
 
-use super::devices::{adb_binary, running_avds};
+use super::devices::{adb_binary, ios_simulators_blocking, running_avds};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
@@ -229,12 +229,15 @@ mod follow {
         platform: String,
         device_id: String,
         device_name: String,
+        toggle_existing: bool,
     ) -> Result<(), String> {
         let label = dock_label(&platform, &device_id);
 
-        // Already open: the same button closes it
+        // Already open: manual toggle closes it; automatic open leaves it alone
         if let Some(window) = app.get_webview_window(&label) {
-            window.close().map_err(|e| e.to_string())?;
+            if toggle_existing {
+                window.close().map_err(|e| e.to_string())?;
+            }
             return Ok(());
         }
 
@@ -738,12 +741,45 @@ pub async fn toggle_device_dock(
 
     #[cfg(target_os = "macos")]
     {
-        follow::open(app, platform, device_id, device_name)
+        follow::open(app, platform, device_id, device_name, true)
     }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, device_name);
         Err("The quick actions bar is only available on macOS".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn open_running_device_docks(app: tauri::AppHandle) -> Result<usize, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let (ios_devices, android_devices) = tokio::task::spawn_blocking(|| {
+            let ios = ios_simulators_blocking()?
+                .into_iter()
+                .filter(|device| matches!(device.state.as_deref(), Some("Booted") | Some("Booting")))
+                .map(|device| ("ios".to_string(), device.id, device.name))
+                .collect::<Vec<_>>();
+            let android = running_avds()
+                .into_iter()
+                .map(|(_serial, avd_name)| ("android".to_string(), avd_name.clone(), avd_name.replace('_', " ")))
+                .collect::<Vec<_>>();
+            Ok::<_, String>((ios, android))
+        })
+        .await
+        .map_err(|e| format!("Task failed: {}", e))??;
+
+        let mut opened = 0;
+        for (platform, device_id, device_name) in ios_devices.into_iter().chain(android_devices) {
+            follow::open(app.clone(), platform, device_id, device_name, false)?;
+            opened += 1;
+        }
+        Ok(opened)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(0)
     }
 }
 

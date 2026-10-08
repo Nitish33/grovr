@@ -57,7 +57,8 @@ export function useDevices(platform: DevicePlatform) {
     let cancelled = false;
     let inFlight = false;
 
-    const id = setInterval(() => {
+    const refreshDevices = () => {
+      if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
       if (inFlight) return;
       inFlight = true;
       list()
@@ -70,10 +71,18 @@ export function useDevices(platform: DevicePlatform) {
         .finally(() => {
           inFlight = false;
         });
+    };
+
+    const onFocus = () => refreshDevices();
+    window.addEventListener('focus', onFocus);
+
+    const id = setInterval(() => {
+      refreshDevices();
     }, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
       clearInterval(id);
     };
   }, [platform]);
@@ -129,6 +138,9 @@ export function useDevices(platform: DevicePlatform) {
         } else {
           await api.launchAndroidEmulator(deviceId);
         }
+        window.setTimeout(() => {
+          api.openRunningDeviceDocks().catch((err) => console.error('Failed to open quick bars:', err));
+        }, 1000);
         refresh(); // pick up the new "Booted" state; polling catches slow boots
       } catch (err) {
         setLaunchError(errorMessage(err));

@@ -174,6 +174,11 @@ export async function toggleDeviceDock(platform: DevicePlatform, deviceId: strin
   return invoke('toggle_device_dock', { platform, deviceId, deviceName });
 }
 
+/** Opens quick action bars for every currently running simulator/emulator that does not already have one. */
+export async function openRunningDeviceDocks(): Promise<number> {
+  return invoke('open_running_device_docks');
+}
+
 export type ToastKind = 'ok' | 'error' | 'busy';
 
 /**

@@ -74,7 +74,7 @@ fn parse_simulators(json: &Value) -> Vec<Device> {
     result
 }
 
-fn ios_simulators_blocking() -> Result<Vec<Device>, String> {
+pub(crate) fn ios_simulators_blocking() -> Result<Vec<Device>, String> {
     let output = Command::new("xcrun")
         .args(["simctl", "list", "devices", "available", "--json"])
         .output()
