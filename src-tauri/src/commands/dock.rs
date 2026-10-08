@@ -9,6 +9,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::utils::config::Color;
 
 const DOCK_WIDTH: f64 = 48.0;
 const DOCK_HEIGHT: f64 = 324.0;
@@ -889,7 +890,9 @@ pub async fn show_design_overlay(
         let _ = existing.emit("design-overlay-color", color);
         #[cfg(target_os = "macos")]
         follow::place_over_device(&existing, rect);
-        existing.show().map_err(|e| e.to_string())?;
+        if pick || !existing.is_visible().unwrap_or(false) {
+            existing.show().map_err(|e| e.to_string())?;
+        }
         if pick {
             let _ = existing.emit("design-start-color-pick", serde_json::json!({
                 "platform": platform,
@@ -913,6 +916,7 @@ pub async fn show_design_overlay(
         .inner_size(rect.2, rect.3)
         .decorations(false)
         .transparent(true)
+        .background_color(Color(0, 0, 0, 0))
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
@@ -948,7 +952,7 @@ pub async fn pick_design_color(
     validate(&platform, &device_id)?;
     #[cfg(target_os = "macos")]
     {
-        pick_design_color_preview_macos(&app, &platform, &device_id, x, y, 0).map(|preview| preview.center)
+        pick_design_color_preview_macos(&app, &platform, &device_id, x, y, 1).map(|preview| preview.center)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -968,7 +972,7 @@ pub async fn preview_design_color(
     validate(&platform, &device_id)?;
     #[cfg(target_os = "macos")]
     {
-        pick_design_color_preview_macos(&app, &platform, &device_id, x, y, 5)
+        pick_design_color_preview_macos(&app, &platform, &device_id, x, y, 25)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -984,7 +988,7 @@ fn pick_design_color_preview_macos(
     device_id: &str,
     x: f64,
     y: f64,
-    radius: i32,
+    sample_size: i32,
 ) -> Result<DesignColorPreview, String> {
     use core_graphics::geometry::{CGPoint, CGRect, CGSize};
     use core_graphics::window::{
@@ -1010,11 +1014,12 @@ fn pick_design_color_preview_macos(
         return Err("Could not read the overlay window number".to_string());
     }
 
-    let radius = radius.max(0) as f64;
-    let origin_x = (device_x + x - radius).max(device_x);
-    let origin_y = (device_y + y - radius).max(device_y);
-    let end_x = (device_x + x + radius + 1.0).min(device_x + device_w);
-    let end_y = (device_y + y + radius + 1.0).min(device_y + device_h);
+    let sample_size = sample_size.max(1) as f64;
+    let half = sample_size / 2.0;
+    let origin_x = (device_x + x - half).max(device_x);
+    let origin_y = (device_y + y - half).max(device_y);
+    let end_x = (origin_x + sample_size).min(device_x + device_w);
+    let end_y = (origin_y + sample_size).min(device_y + device_h);
     let capture_w = (end_x - origin_x).max(1.0);
     let capture_h = (end_y - origin_y).max(1.0);
     let rect = CGRect::new(

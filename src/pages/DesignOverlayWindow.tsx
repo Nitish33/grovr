@@ -190,13 +190,15 @@ export function DesignOverlayWindow() {
     event.preventDefault();
     event.stopPropagation();
     const target = pickTarget;
-    setPickTarget(null);
-    setPreview(null);
     try {
       const picked = await api.pickDesignColor(target.platform, target.deviceId, event.clientX, event.clientY);
       setColor(picked);
+      setPickTarget(null);
+      setPreview(null);
       await emit("design-color-picked", picked);
     } catch (err) {
+      setPickTarget(null);
+      setPreview(null);
       console.error("Failed to pick design color:", err);
       await emit("design-color-pick-cancelled");
     }
@@ -250,6 +252,7 @@ export function DesignOverlayWindow() {
                 style={{ background: pixel }}
               />
             ))}
+            <code className="design-pick-hex">{preview.center}</code>
           </div>
           <span className="design-pick-swatch" style={{ background: preview.center }} />
         </div>

@@ -11,7 +11,6 @@ import {
   Link,
   LoaderCircle,
   MousePointer2,
-  Pipette,
   Plus,
   RefreshCw,
   Ruler,
@@ -252,6 +251,15 @@ export function DockWindow() {
   const startColorPicker = async () => {
     setColorPicking(true);
     await api.showDesignOverlay(platform, deviceId, designColor, true, true);
+  };
+
+  const copyDesignColor = async () => {
+    try {
+      await writeText(designColor);
+      await toast(`Copied ${designColor}`);
+    } catch (err) {
+      await toast(String(err), "error");
+    }
   };
 
   const saveDeepLinks = async (next: DeepLink[]) => {
@@ -751,14 +759,16 @@ export function DockWindow() {
               aria-pressed={colorPicking}
             >
               <span>Color picker</span>
-              <Pipette size={13} />
             </button>
-            <span
-              className="dock-design-current-color"
-              style={{ background: designColor }}
-              title={designColor}
-              aria-label={`Current color ${designColor}`}
-            />
+            <button
+              className="dock-design-hex"
+              onClick={() => void copyDesignColor()}
+              title={`Copy ${designColor}`}
+              aria-label={`Copy ${designColor}`}
+            >
+              <span style={{ background: designColor }} />
+              <code>{designColor}</code>
+            </button>
           </div>
           <div className="dock-design-shortcut">
             <span>Shift</span>

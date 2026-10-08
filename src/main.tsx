@@ -15,6 +15,10 @@ import "./index.css";
 // this same bundle with ?view=json|logs|dock|toast|recording|quickbar-settings
 const view = new URLSearchParams(window.location.search).get("view");
 
+if (view === "design-overlay") {
+  document.documentElement.classList.add("design-overlay-root");
+}
+
 function Root() {
   switch (view) {
     case "json":
