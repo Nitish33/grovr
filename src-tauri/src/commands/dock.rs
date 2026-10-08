@@ -2,6 +2,7 @@
 //! window and follows it around. macOS only: window positions come from CoreGraphics.
 
 use super::devices::{adb_binary, ios_simulators_blocking, running_avds};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
@@ -17,6 +18,7 @@ const TOAST_HEIGHT: f64 = 48.0;
 const INDICATOR_WIDTH: f64 = 116.0;
 const INDICATOR_HEIGHT: f64 = 34.0;
 const INDICATOR_TOP_MARGIN: f64 = 14.0;
+const POINTER_SIZE: f64 = 120.0;
 const TOAST_MILLIS: u64 = 1600;
 /// A toast that stays until another replaces it (e.g. "Processing…"), with a safety limit
 const STICKY_TOAST_MILLIS: u64 = 120_000;
@@ -81,7 +83,7 @@ mod follow {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
     const GAP: f64 = 6.0;
     const POLL: Duration = Duration::from_millis(40);
@@ -104,6 +106,14 @@ mod follow {
         y: f64,
         w: f64,
         h: f64,
+    }
+
+    #[derive(Debug, Clone, Serialize)]
+    struct PointerState {
+        pressed: bool,
+        dragging: bool,
+        dx: f64,
+        dy: f64,
     }
 
     fn number(dict: &CFDictionary<CFString, CFType>, key: core_foundation::string::CFStringRef) -> Option<f64> {
@@ -505,6 +515,156 @@ mod follow {
         format!("dock-rec-{}", bar_label)
     }
 
+    fn pointer_label(bar_label: &str) -> String {
+        format!("dock-pointer-{}", bar_label)
+    }
+
+    fn mouse_location() -> Option<(f64, f64)> {
+        use cocoa::foundation::{NSPoint, NSRect};
+        use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+
+        unsafe {
+            let screens: *mut Object = msg_send![class!(NSScreen), screens];
+            if screens.is_null() {
+                return None;
+            }
+            let count: usize = msg_send![screens, count];
+            if count == 0 {
+                return None;
+            }
+            let primary: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+            let primary_frame: NSRect = msg_send![primary, frame];
+            let point: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+            Some((point.x, primary_frame.size.height - point.y))
+        }
+    }
+
+    fn primary_mouse_pressed() -> bool {
+        use objc::{class, msg_send, sel, sel_impl};
+        let buttons: u64 = unsafe { msg_send![class!(NSEvent), pressedMouseButtons] };
+        buttons & 1 == 1
+    }
+
+    fn show_pointer_indicator(bar: &tauri::WebviewWindow) -> Result<(), String> {
+        let app = bar.app_handle().clone();
+        let bar_label = bar.label().to_string();
+        let label = pointer_label(&bar_label);
+        if app.get_webview_window(&label).is_some() {
+            return Ok(());
+        }
+
+        let pointer = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html?view=pointer".into()))
+            .title("Touch indicator")
+            .inner_size(POINTER_SIZE, POINTER_SIZE)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(false)
+            .visible(false)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        pointer.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_on_close = stop.clone();
+        pointer.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                stop_on_close.store(true, Ordering::Relaxed);
+            }
+        });
+
+        std::thread::spawn(move || {
+            let mut visible = false;
+            let mut previous_mouse: Option<(f64, f64)> = None;
+            let mut previous_state: Option<(bool, bool, i32, i32)> = None;
+            while !stop.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(24));
+
+                let rect = app
+                    .state::<DockState>()
+                    .device_rects
+                    .lock()
+                    .ok()
+                    .and_then(|rects| rects.get(&bar_label).copied());
+                let Some((dx, dy, dw, dh)) = rect else {
+                    if visible {
+                        let _ = pointer.hide();
+                        visible = false;
+                    }
+                    continue;
+                };
+                let Some((mx, my)) = mouse_location() else {
+                    continue;
+                };
+                let (dx_delta, dy_delta) = previous_mouse
+                    .map(|(px, py)| (mx - px, my - py))
+                    .unwrap_or((0.0, 0.0));
+                previous_mouse = Some((mx, my));
+                let inside = mx >= dx && mx <= dx + dw && my >= dy && my <= dy + dh;
+                if inside {
+                    place_top_left(&pointer, mx - POINTER_SIZE / 2.0, my - POINTER_SIZE / 2.0);
+                    let pressed = primary_mouse_pressed();
+                    let dragging = pressed && (dx_delta.abs() + dy_delta.abs()) > 1.5;
+                    let clamped_dx = dx_delta.clamp(-22.0, 22.0);
+                    let clamped_dy = dy_delta.clamp(-22.0, 22.0);
+                    let state_key = (
+                        pressed,
+                        dragging,
+                        (clamped_dx * 10.0).round() as i32,
+                        (clamped_dy * 10.0).round() as i32,
+                    );
+                    if previous_state != Some(state_key) {
+                        previous_state = Some(state_key);
+                        let _ = pointer.emit(
+                            "pointer-state",
+                            PointerState {
+                                pressed,
+                                dragging,
+                                dx: clamped_dx,
+                                dy: clamped_dy,
+                            },
+                        );
+                    }
+                    if !visible {
+                        let _ = pointer.show();
+                        visible = true;
+                    }
+                } else if visible {
+                    let _ = pointer.hide();
+                    visible = false;
+                    previous_state = None;
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    pub fn toggle_pointer_indicator(app: &tauri::AppHandle, platform: &str, device_id: &str) -> Result<String, String> {
+        let bar_label = dock_label(platform, device_id);
+        let label = pointer_label(&bar_label);
+        if let Some(window) = app.get_webview_window(&label) {
+            window.close().map_err(|e| e.to_string())?;
+            return Ok("off".to_string());
+        }
+        let Some(bar) = app.get_webview_window(&bar_label) else {
+            return Err("Quick bar is not open".to_string());
+        };
+        show_pointer_indicator(&bar)?;
+        Ok("on".to_string())
+    }
+
+    fn hide_pointer_indicator(bar: &tauri::WebviewWindow) {
+        let app = bar.app_handle();
+        if let Some(window) = app.get_webview_window(&pointer_label(bar.label())) {
+            let _ = window.close();
+        }
+    }
+
     /// Shows the "recording" pill near the top of the device window the calling bar is docked to.
     pub fn show_indicator(bar: &tauri::WebviewWindow, started_at: u64) -> Result<(), String> {
         let app = bar.app_handle().clone();
@@ -661,6 +821,7 @@ mod follow {
         if let Ok(mut rects) = window.app_handle().state::<DockState>().device_rects.lock() {
             rects.remove(window.label());
         }
+        hide_pointer_indicator(&window);
         hide_indicator(&window);
     }
 }
@@ -1010,6 +1171,17 @@ pub async fn device_quick_action(
     payload: Option<String>,
 ) -> Result<Option<String>, String> {
     validate(&platform, &device_id)?;
+
+    if action == "toggle_pointer_location" {
+        #[cfg(target_os = "macos")]
+        {
+            return follow::toggle_pointer_indicator(&app, &platform, &device_id).map(Some);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err("Touch indicators are only available on macOS".to_string());
+        }
+    }
 
     tokio::task::spawn_blocking(move || {
         let ios = platform == "ios";

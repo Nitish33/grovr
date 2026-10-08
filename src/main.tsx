@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { DockWindow } from "./pages/DockWindow";
 import { LogsWindow } from "./pages/LogsWindow";
+import { PointerIndicatorWindow } from "./pages/PointerIndicatorWindow";
 import { QuickBarSettingsWindow } from "./pages/QuickBarSettingsWindow";
 import { RecordingIndicatorWindow } from "./pages/RecordingIndicatorWindow";
 import { ToastWindow } from "./pages/ToastWindow";
@@ -25,6 +26,8 @@ function Root() {
       return <ToastWindow />;
     case "recording":
       return <RecordingIndicatorWindow />;
+    case "pointer":
+      return <PointerIndicatorWindow />;
     case "quickbar-settings":
       return <QuickBarSettingsWindow />;
     default:

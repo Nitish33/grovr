@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Link,
   LoaderCircle,
+  MousePointer2,
   Plus,
   RefreshCw,
   Zap,
@@ -326,6 +327,15 @@ export function DockWindow() {
           "toggle_appearance",
         );
         return mode ? `Switched to ${mode} mode` : null;
+      },
+    },
+    {
+      id: "pointer-location",
+      label: platform === "ios" ? "Show touch indicators" : "Show taps and pointer trace",
+      icon: MousePointer2,
+      run: async () => {
+        const mode = await api.deviceQuickAction(platform, deviceId, "toggle_pointer_location");
+        return mode ? `Touch indicators ${mode}` : null;
       },
     },
     {
