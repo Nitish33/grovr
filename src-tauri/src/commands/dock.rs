@@ -260,6 +260,12 @@ mod follow {
     ) -> Result<(), String> {
         let label = dock_label(&platform, &device_id);
 
+        // The check below and the build further down must be atomic: window focus, startup and
+        // manual toggles can all call this at once, and each would otherwise see "no bar yet"
+        // and create its own
+        static OPEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _open_guard = OPEN_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
         // Already open: manual toggle closes it; automatic open leaves it alone
         if let Some(window) = app.get_webview_window(&label) {
             if toggle_existing {
