@@ -270,7 +270,9 @@ pub fn set_quick_links(
 
     let mut settings = state.0.lock().map_err(|e| e.to_string())?;
     settings.quick_links = cleaned;
-    save_settings(&app, &settings)
+    save_settings(&app, &settings)?;
+    super::spotlight::sync(&settings.quick_links);
+    Ok(())
 }
 
 /// Replaces the full list of app deep links used by the quick bar.

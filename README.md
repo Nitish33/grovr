@@ -58,6 +58,10 @@ See pull request status (draft, review requested, approved, CI status) and Jira 
 
 Delete worktrees with one click. Optionally delete the local branch too—no more orphaned branches cluttering your repo.
 
+### Spotlight Quick Links
+
+Type `dev:<link name>` in Spotlight and press Enter to open a saved quick link in your browser. Links are added, renamed and removed from Spotlight as you edit them, and macOS clears them when the app is uninstalled.
+
 ---
 
 ## Installation
@@ -92,6 +96,30 @@ pnpm tauri build
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guide.
+
+## Troubleshooting
+
+### Spotlight doesn't show `dev:<link name>`
+
+- **Run a built app, not `pnpm tauri dev`.** Spotlight indexes items per app bundle, so the dev binary never appears. Build with `pnpm tauri build` and launch the `.app`.
+- **Use a stable signature.** Ad-hoc signed builds (the default for local debug builds) get a new identity on every rebuild, and Spotlight may ignore them. Sign with an Apple Development or Developer ID certificate, and run the app from `/Applications` or `~/Applications`:
+  ```bash
+  codesign --force --deep --options runtime -s "<identity>" \
+    --entitlements src-tauri/entitlements.plist /path/to/DevTool.app
+  ```
+  List identities with `security find-identity -v -p codesigning`.
+- **Check Spotlight settings.** In System Settings → Spotlight → Search Results, make sure `DevTool` is enabled. Several `DevTool-<hash>` entries are leftovers from earlier ad-hoc builds and can be ignored.
+- **Wait a little.** New items can take 10-30 seconds to appear. Try `dev name` if `dev:name` doesn't match.
+- **Confirm indexing.** Launch the app from a terminal and look for `[spotlight] indexed N quick links`. A `[spotlight] indexing failed` line includes the system error.
+
+### Spotlight result shows but Enter doesn't open the link
+
+- Launch the app from a terminal and click the result. A `[spotlight] continue activity` line means the click arrived. If it doesn't appear, check for `[spotlight] delegate hook installed`.
+- Links with `file:`, `javascript:`, `data:`, `vbscript:` or `blob:` schemes are blocked on purpose.
+
+### Spotlight results remain after removing a link
+
+Reindexing runs whenever quick links are saved. If a stale result remains, reopen the app, or save any quick link change to force a refresh.
 
 ## Tech Stack
 

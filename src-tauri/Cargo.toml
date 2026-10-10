@@ -59,6 +59,7 @@ tauri-plugin-process = "2.3.1"
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"
+block = "0.1"
 smappservice-rs = "0.1"
 core-graphics = "0.24"
 core-foundation = "0.10"

@@ -13,8 +13,7 @@ fn scheme_of(url: &str) -> Option<String> {
 
 /// Opens a link with the system handler. Unlike the frontend opener (http/https/mailto/tel only),
 /// this also supports custom app schemes such as `myapp://login`.
-#[tauri::command]
-pub fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
+pub fn open_url(app: &tauri::AppHandle, url: &str) -> Result<(), String> {
     let url = url.trim();
     let scheme = scheme_of(url).ok_or("Link must start with a scheme, e.g. https://")?;
     if BLOCKED_SCHEMES.contains(&scheme.as_str()) {
@@ -24,4 +23,9 @@ pub fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    open_url(&app, &url)
 }

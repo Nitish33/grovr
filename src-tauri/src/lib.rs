@@ -119,6 +119,12 @@ pub fn run() {
             }
 
             app.manage(settings_state);
+            commands::spotlight::install(app.handle().clone());
+            if let Some(state) = app.try_state::<commands::settings::SettingsState>() {
+                if let Ok(settings) = state.0.lock() {
+                    commands::spotlight::sync(&settings.quick_links);
+                }
+            }
             app.manage(commands::logs::LogStreams::default());
             app.manage(commands::dock::DockState::default());
             app.manage(commands::recording::Recordings::default());

@@ -10,3 +10,4 @@ pub mod logs;
 pub mod dock;
 pub mod recording;
 pub mod permissions;
+pub mod spotlight;
